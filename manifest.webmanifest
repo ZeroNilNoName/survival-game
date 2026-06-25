@@ -1,0 +1,28 @@
+{
+    "name": "2D Survival Sandbox Multiplayer",
+    "short_name": "SurvivalSandbox",
+    "description": "Многопользовательская 2D игра на выживание с крафтом, добычей ресурсов и строительством.",
+    "start_url": "./index.html",
+    "display": "standalone",
+    "background_color": "#1a1a1a",
+    "theme_color": "#eab308",
+    "orientation": "landscape",
+    "icons": [
+        {
+            "src": "icon_192.png",
+            "sizes": "192x192",
+            "type": "image/png"
+        },
+        {
+            "src": "icon_512.png",
+            "sizes": "512x512",
+            "type": "image/png"
+        },
+        {
+            "src": "icon_512.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "maskable"
+        }
+    ]
+}

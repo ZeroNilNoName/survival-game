@@ -1,0 +1,845 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>2D Top-Down Survival Sandbox Multiplayer</title>
+        <link rel="manifest" href="manifest.webmanifest">
+    <meta name="theme-color" content="#1a1a1a">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <style>
+        * { box-sizing: border-box; user-select: none; -webkit-user-select: none; margin: 0; padding: 0; }
+        body, html { overflow: hidden; background-color: #1a1a1a; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; width: 100vw; height: 100vh; }
+        #gameCanvas { display: block; width: 100vw; height: 100vh; }
+        
+        #starterMenu { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(15, 15, 15, 0.98); z-index: 100; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 24px; color: white; padding: 20px; }
+        .menu-panel { display: flex; flex-direction: column; gap: 16px; width: 100%; max-width: 320px; background: #222; padding: 25px; border-radius: 12px; border: 2px solid #444; box-shadow: 0 10px 30px rgba(0,0,0,0.7); }
+        .menu-btn { padding: 14px; font-size: 15px; font-weight: bold; text-transform: uppercase; letter-spacing: 1px; color: white; border: none; border-radius: 6px; cursor: pointer; transition: background 0.2s; }
+        #startBtn { background-color: #10b981; border-bottom: 3px solid #059669; } #startBtn:hover { background-color: #059669; }
+        #multiplayerModeBtn { background-color: #8b5cf6; border-bottom: 3px solid #6d28d9; } #multiplayerModeBtn:hover { background-color: #6d28d9; }
+        #connectMultiplayerBtn { background-color: #10b981; border-bottom: 3px solid #059669; } #connectMultiplayerBtn:hover { background-color: #059669; }
+        #savesBtn { background-color: #8b5cf6; border-bottom: 3px solid #6d28d9; } #savesBtn:hover { background-color: #6d28d9; }
+        #settingsBtn { background-color: #3b82f6; border-bottom: 3px solid #2563eb; } #settingsBtn:hover { background-color: #2563eb; }
+        #exitBtn { background-color: #ef4444; border-bottom: 3px solid #b91c1c; } #exitBtn:hover { background-color: #dc2626; }
+        .back-btn { background-color: #4b5563; border-bottom: 3px solid #374151; margin-top: 8px;} .back-btn:hover { background-color: #374151; }
+
+        #hud { position: absolute; top: 20px; left: 20px; display: flex; flex-direction: column; gap: 12px; background: rgba(0, 0, 0, 0.75); padding: 15px; border-radius: 8px; border: 2px solid #444; min-width: 240px; pointer-events: none; z-index: 10; }
+        .bar-container { display: flex; flex-direction: column; gap: 4px; }
+        .bar-label { color: #fff; font-size: 11px; font-weight: bold; text-transform: uppercase; letter-spacing: 1px; }
+        .bar-outer { width: 100%; height: 14px; background-color: #333; border-radius: 4px; border: 1px solid #555; overflow: hidden; }
+        .bar-inner { height: 100%; width: 100%; transition: width 0.1s ease; }
+        #healthBar { background-color: #ef4444; } #hungerBar { background-color: #f97316; } #thirstBar { background-color: #06b6d4; }
+
+        #hotbarContainer { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); background: rgba(0, 0, 0, 0.85); padding: 10px; border-radius: 10px; border: 2px solid #555; z-index: 10; transition: bottom 0.25s cubic-bezier(0.25, 1, 0.5, 1), opacity 0.25s ease; }
+        .hotbar-label { color: #aaa; font-size: 10px; text-transform: uppercase; text-align: center; margin-bottom: 4px; letter-spacing: 1px; }
+
+        .grid { display: grid; gap: 8px; background: #111; padding: 10px; border-radius: 8px; }
+        #hotbarGrid { grid-template-columns: repeat(9, 60px); } #inventoryGrid { grid-template-columns: repeat(9, 60px); }
+        #craftingGrid { grid-template-columns: repeat(3, 60px); } #recipeBookGrid { grid-template-columns: repeat(3, 60px); max-height: 230px; overflow-y: auto; }
+
+        .slot { width: 60px; height: 60px; background: #2a2a2a; border: 2px solid #555; border-radius: 6px; display: flex; align-items: center; justify-content: center; position: relative; cursor: pointer; font-size: 10px; font-weight: bold; text-align: center; color: #fff; word-break: break-all; }
+        .slot:hover { border-color: #3b82f6; background: #333; }
+        .slot .count { position: absolute; bottom: 2px; right: 4px; background: rgba(0,0,0,0.85); padding: 1px 4px; border-radius: 3px; font-size: 10px; color: #fff; z-index: 2; }
+
+        .recipe-slot { width: 60px; height: 60px; background: #1e293b; border: 2px solid #3b82f6; border-radius: 6px; display: flex; align-items: center; justify-content: center; position: relative; cursor: pointer; font-size: 9px; font-weight: bold; text-align: center; color: #fff; word-break: break-all; padding: 4px; }
+        .recipe-slot:hover { background: #2563eb; border-color: #60a5fa; }
+
+        #unifiedMenu { display: none; position: absolute; top: 45%; left: 50%; transform: translate(-50%, -50%); background: rgba(20, 20, 20, 0.98); border: 3px solid #666; border-radius: 14px; padding: 25px; color: white; box-shadow: 0 15px 40px rgba(0,0,0,0.85); z-index: 20; }
+        .menu-layout { display: flex; gap: 30px; align-items: flex-start; }
+        .panel-title { margin-top: 0; margin-bottom: 15px; font-size: 14px; letter-spacing: 1.5px; text-transform: uppercase; color: #eab308; border-bottom: 2px solid #333; padding-bottom: 6px; text-align: center; }
+        .crafting-interface { display: flex; align-items: center; gap: 20px; margin-top: 10px; }
+        .craft-arrow { font-size: 32px; color: #eab308; }
+        #craftOutputSlot { border-color: #10b981; background: #132d24; width: 70px; height: 70px; font-size: 11px; }
+
+        #furnaceMenu { display: none; position: absolute; top: 78%; left: 50%; transform: translate(-50%, -50%); background: rgba(25, 20, 20, 0.96); border: 3px solid #b45309; border-radius: 12px; padding: 16px; color: white; z-index: 25; box-shadow: 0 12px 30px rgba(0,0,0,0.85); }
+        .furnace-layout { display: flex; gap: 24px; align-items: center; }
+
+        #brickFurnaceMenu { display: none; position: absolute; top: 60%; left: 50%; transform: translate(-50%, -50%); background: rgba(30, 20, 20, 0.97); border: 3px solid #dc2626; border-radius: 14px; padding: 20px; color: white; z-index: 26; box-shadow: 0 15px 40px rgba(0,0,0,0.9); }
+        .bfurnace-layout { display: flex; gap: 30px; align-items: center; }
+        .bfurnace-col { display: flex; flex-direction: column; gap: 8px; }
+        .bfurnace-row { display: flex; gap: 10px; justify-content: center; align-items: center; }
+        .bfurnace-arrow { font-size: 24px; color: #dc2626; }
+
+        #loomMenu { display: none; position: absolute; top: 60%; left: 50%; transform: translate(-50%, -50%); background: rgba(20, 25, 20, 0.97); border: 3px solid #16a34a; border-radius: 14px; padding: 20px; color: white; z-index: 26; box-shadow: 0 15px 40px rgba(0,0,0,0.9); }
+        .loom-layout { display: flex; gap: 24px; align-items: center; }
+        .loom-col { display: flex; flex-direction: column; gap: 8px; align-items: center; }
+        .loom-progress-outer { width: 80px; height: 14px; background: #333; border-radius: 4px; border: 1px solid #555; overflow: hidden; }
+        .loom-progress-inner { height: 100%; width: 0%; background: #16a34a; transition: width 0.2s; }
+        .loom-work-btn { padding: 8px 16px; background: #16a34a; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 12px; text-transform: uppercase; transition: background 0.2s; }
+        .loom-work-btn:hover { background: #15803d; }
+        .loom-work-btn:disabled { background: #555; cursor: not-allowed; }
+
+        #floatingCursorItem { position: fixed; pointer-events: none; z-index: 100; display: none; background: rgba(16, 185, 129, 0.95); border: 2px solid #fff; padding: 6px 10px; border-radius: 6px; color: white; font-weight: bold; font-size: 11px; box-shadow: 0 4px 10px rgba(0,0,0,0.5); transform: translate(12px, 12px); }
+
+        #saveControls { position:absolute;top:20px;right:20px;z-index:20; }
+        #saveControls button{padding:10px 16px;margin-left:8px;cursor:pointer;}
+
+        #interactionPrompt { position: absolute; bottom: 120px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.9); color: #fff; padding: 10px 20px; border-radius: 20px; font-size: 13px; border: 1px solid #eab308; pointer-events: none; display: none; z-index: 10; }
+
+        #mobileJoystickContainer { position: absolute; bottom: 40px; left: 40px; width: 130px; height: 130px; background: rgba(255, 255, 255, 0.08); border: 2px solid rgba(255, 255, 255, 0.25); border-radius: 50%; touch-action: none; z-index: 80; display: none; }
+        #mobileJoystickKnob { position: absolute; top: 40px; left: 40px; width: 50px; height: 50px; background: rgba(234, 179, 8, 0.65); border: 2px solid #fff; border-radius: 50%; pointer-events: none; }
+        #mobileActionContainer { position: absolute; bottom: 40px; right: 40px; display: none; gap: 12px; z-index: 80; flex-wrap: wrap; max-width: 160px; justify-content: flex-end; }
+        .mobile-action-btn { width: 70px; height: 70px; background: rgba(42, 42, 42, 0.75); border: 2px solid #eab308; border-radius: 50%; color: #fff; font-size: 18px; font-weight: bold; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 12px rgba(0,0,0,0.5); touch-action: none; }
+        .mobile-action-btn:active { background: rgba(234, 179, 8, 0.4); }
+
+        .mobile-device .slot { width: 40px; height: 40px; font-size: 8px; }
+        .mobile-device .slot .count { font-size: 8px; padding: 0px 3px; bottom: 1px; right: 2px; }
+        .mobile-device .recipe-slot { width: 42px; height: 42px; font-size: 7px; padding: 2px; }
+        .mobile-device #hotbarGrid { grid-template-columns: repeat(9, 40px); gap: 3px; padding: 6px; }
+        .mobile-device #inventoryGrid { grid-template-columns: repeat(9, 40px); gap: 3px; padding: 6px; }
+        .mobile-device #craftingGrid { grid-template-columns: repeat(3, 40px); gap: 3px; padding: 6px; }
+        .mobile-device #recipeBookGrid { grid-template-columns: repeat(4, 42px); gap: 4px; padding: 6px; max-height: 150px; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+        .mobile-device #hotbarContainer { bottom: 10px; padding: 6px; z-index: 30; }
+        .mobile-device #hotbarContainer.hotbar-hidden { bottom: -80px; opacity: 0.15; }
+        .mobile-device .hotbar-label { font-size: 8px; margin-bottom: 2px; }
+        .mobile-device #hud { top: 10px; left: 10px; padding: 8px; min-width: 160px; gap: 6px; }
+        .mobile-device .bar-label { font-size: 9px; } .mobile-device .bar-outer { height: 10px; }
+        .mobile-device #saveControls { top: 10px; right: 10px; } .mobile-device #saveControls button { padding: 6px 10px; font-size: 11px; margin-left: 4px; }
+        .mobile-device #unifiedMenu { top: 15px; left: 50%; transform: translateX(-50%); width: 96vw; max-width: 600px; max-height: calc(100vh - 120px); overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 12px; border-radius: 12px; }
+        .mobile-device .menu-layout { flex-direction: column; gap: 12px; align-items: center; }
+        .mobile-device .panel-title { font-size: 12px; margin-bottom: 6px; text-align: center; }
+        .mobile-device .crafting-interface { margin-top: 4px; gap: 12px; }
+        .mobile-device #craftOutputSlot { width: 48px; height: 48px; font-size: 9px; }
+        .mobile-device #furnaceMenu { top: 60px; left: 50%; transform: translateX(-50%); padding: 10px; z-index: 25; } 
+        .mobile-device .furnace-layout { gap: 14px; }
+        .mobile-device #brickFurnaceMenu { top: 60px; left: 50%; transform: translateX(-50%); width: 95vw; padding: 10px; box-sizing: border-box; z-index: 25; } 
+        .mobile-device .bfurnace-layout { gap: 10px; flex-direction: column; }
+        .mobile-device #loomMenu { top: 60px; left: 50%; transform: translateX(-50%); width: 95vw; padding: 10px; box-sizing: border-box; z-index: 25; }
+        .mobile-device .loom-layout { gap: 10px; flex-direction: column; }
+        .mobile-device #mobileJoystickContainer { bottom: 20px; left: 20px; width: 110px; height: 110px; z-index: 80; }
+        .mobile-device #mobileJoystickKnob { top: 35px; left: 35px; width: 40px; height: 40px; }
+        .mobile-device #mobileActionContainer { bottom: 20px; right: 20px; gap: 10px; z-index: 80; }
+        .mobile-device .mobile-action-btn { width: 54px; height: 54px; font-size: 14px; }
+        .mobile-device #interactionPrompt { bottom: 95px; font-size: 11px; padding: 6px 14px; }
+        
+        .slot.has-texture { background-size: cover; background-position: center; background-repeat: no-repeat; image-rendering: pixelated; }
+        .slot.has-texture .item-text { position: absolute; bottom: 2px; left: 2px; right: 2px; font-size: 8px; text-shadow: 0 1px 2px rgba(0,0,0,0.9); background: rgba(0,0,0,0.6); padding: 1px 2px; border-radius: 2px; }
+
+        .save-item { background: #333; padding: 12px; border-radius: 6px; border: 1px solid #555; display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+        .save-info { font-size: 12px; color: #ddd; line-height: 1.4; }
+        .save-actions { display: flex; gap: 8px; }
+        .save-btn { padding: 8px 12px; border: none; border-radius: 4px; cursor: pointer; color: white; font-weight: bold; font-size: 12px; }
+        .load-btn { background: #10b981; } .load-btn:hover { background: #059669; }
+        .delete-btn { background: #ef4444; } .delete-btn:hover { background: #dc2626; }
+
+        #devMenu { display: none; position: absolute; top: 10%; left: 10%; width: 80%; height: 80%; background: rgba(10, 10, 10, 0.98); border: 2px solid #a855f7; border-radius: 10px; z-index: 50; padding: 20px; color: white; flex-direction: column; }
+        .dev-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; border-bottom: 2px solid #a855f7; padding-bottom: 10px; }
+        .dev-tabs { display: flex; gap: 10px; margin-bottom: 15px; }
+        .dev-tab-btn { padding: 8px 16px; background: #374151; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }
+        .dev-tab-btn.active { background: #a855f7; }
+        .dev-content { display: grid; grid-template-columns: repeat(auto-fill, minmax(80px, 1fr)); gap: 10px; overflow-y: auto; flex-grow: 1; padding-right: 10px; }
+        
+        .dev-item-btn { background: #1e293b; border: 1px solid #4b5563; color: #fff; padding: 10px 4px; border-radius: 6px; cursor: pointer; font-size: 10px; font-weight: bold; text-transform: uppercase; text-align: center; transition: 0.2s; min-height: 80px; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; position: relative; overflow: hidden; }
+        .dev-item-btn:hover { background: #a855f7; border-color: #c084fc; }
+        .dev-item-btn.has-texture { background-size: 60px 60px; background-position: center 30%; background-repeat: no-repeat; image-rendering: pixelated; justify-content: flex-end; }
+        .dev-item-btn .item-text { position: absolute; bottom: 0; left: 0; right: 0; font-size: 8px; text-shadow: 0 1px 2px rgba(0,0,0,0.9); background: rgba(0,0,0,0.7); padding: 3px 2px; border-radius: 0 0 5px 5px; color: #fff; text-transform: uppercase; text-align: center; word-break: break-all; line-height: 1.1; }
+    </style>
+</head>
+<body>
+
+    <div id="starterMenu">
+        <h1 style="color: #eab308; font-size: 34px; text-transform: uppercase; letter-spacing: 3px; margin: 0; text-shadow: 0 4px 12px rgba(0,0,0,0.6); text-align: center;">Survival Sandbox</h1>
+        <div id="menuPrimaryPanel" class="menu-panel">
+            <input type="text" id="seedInput" placeholder="Seed мира (только для одиночки)" style="padding: 10px; border-radius: 6px; border: 2px solid #444; background: #333; color: #fff; text-align: center; font-size: 14px;">
+            <button id="startBtn" class="menu-btn">Новая игра</button>
+            <button id="multiplayerModeBtn" class="menu-btn">Мультиплеер</button>
+            <button id="savesBtn" class="menu-btn">Сохраненные миры</button>
+            <button id="settingsBtn" class="menu-btn">Настройки</button>
+            <button id="exitBtn" class="menu-btn">Выход</button>
+        </div>
+        <div id="menuMultiplayerPanel" class="menu-panel" style="display: none;">
+            <div style="font-size: 16px; font-weight: bold; color: #ef4444; margin-bottom: 12px; border-bottom: 1px solid #444; padding-bottom: 6px; text-align: center;">ПОДКЛЮЧЕНИЕ К СЕРВЕРУ</div>
+            <input type="text" id="nicknameInput" placeholder="Ваш никнейм" value="Survivor" style="padding: 10px; border-radius: 6px; border: 2px solid #444; background: #333; color: #fff; text-align: center; font-size: 14px;">
+            <input type="text" id="serverIpInput" placeholder="localhost:3000" value="localhost:3000" style="padding: 10px; border-radius: 6px; border: 2px solid #444; background: #333; color: #fff; text-align: center; font-size: 14px;">
+            <button id="connectMultiplayerBtn" class="menu-btn">Подключиться</button>
+            <button id="multiBackBtn" class="menu-btn back-btn">Назад в меню</button>
+        </div>
+        <div id="menuSavesPanel" class="menu-panel" style="display: none;">
+            <div style="font-size: 16px; font-weight: bold; color: #8b5cf6; margin-bottom: 12px; border-bottom: 1px solid #444; padding-bottom: 6px; text-align: center;">СПИСОК СОХРАНЕНИЙ</div>
+            <div id="savesListContainer" style="max-height: 400px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px;"></div>
+            <button id="savesBackBtn" class="menu-btn back-btn">Назад в меню</button>
+        </div>
+        <div id="menuSettingsPanel" class="menu-panel" style="display: none;">
+            <div style="font-size: 16px; font-weight: bold; color: #eab308; margin-bottom: 12px; border-bottom: 1px solid #444; padding-bottom: 6px; text-align: center;">НАСТРОЙКИ</div>
+            <label style="display: flex; align-items: center; gap: 12px; cursor: pointer; padding: 6px 0;">
+                <input type="checkbox" id="mobileModeCheckbox" style="transform: scale(1.3); cursor: pointer;">
+                <span style="font-size: 14px; font-weight: 500;">Включить мобильный режим</span>
+            </label>
+            <button id="settingsBackBtn" class="menu-btn back-btn">Назад в меню</button>
+        </div>
+    </div>
+
+    <canvas id="gameCanvas"></canvas>
+    <div id="mobileJoystickContainer"><div id="mobileJoystickKnob"></div></div>
+    <div id="mobileActionContainer">
+        <div id="mobileActionE" class="mobile-action-btn">E</div>
+        <div id="mobileActionR" class="mobile-action-btn">R</div>
+        <div id="mobileActionEsc" class="mobile-action-btn" style="background: rgba(239, 68, 68, 0.8); border-color: #ef4444; font-size: 14px;">МЕНЮ</div>
+        <div id="mobileActionDev" class="mobile-action-btn" style="background: rgba(168, 85, 247, 0.8); border-color: #a855f7; font-size: 14px;">DEV</div>
+    </div>
+    <div id="devMenu">
+        <div class="dev-header">
+            <h2 style="color: #a855f7; text-transform: uppercase; letter-spacing: 2px;">Developer Menu</h2>
+            <button id="closeDevMenuBtn" style="background: #ef4444; color: white; border: none; padding: 8px 16px; cursor: pointer; border-radius: 4px; font-weight: bold;">ЗАКРЫТЬ (X)</button>
+        </div>
+        <div class="dev-tabs">
+            <button class="dev-tab-btn active" data-tab="res">Ресурсы</button>
+            <button class="dev-tab-btn" data-tab="obj">Объекты</button>
+            <button class="dev-tab-btn" data-tab="anm">Животные</button>
+        </div>
+        <div id="devMenuContent" class="dev-content"></div>
+    </div>
+    <div id="floatingCursorItem">STICK x5</div>
+    <div id="hud">
+        <div class="bar-container"><div class="bar-label">Health</div><div class="bar-outer"><div id="healthBar" class="bar-inner"></div></div></div>
+        <div class="bar-container"><div class="bar-label">Hunger</div><div class="bar-outer"><div id="hungerBar" class="bar-inner"></div></div></div>
+        <div class="bar-container"><div class="bar-label">Thirst</div><div class="bar-outer"><div id="thirstBar" class="bar-inner"></div></div></div>
+        <div id="scoreContainer" style="pointer-events: auto; cursor: pointer; margin-top: 5px; background: rgba(234, 179, 8, 0.2); padding: 5px; border-radius: 4px; text-align: center; border: 1px solid #eab308; color: #eab308; font-weight: bold;">Scores: <span id="scoreValue">0</span> (Click to Shop)</div>
+    </div>
+    <div id="saveControls"><button id="saveBtn">Save</button></div>
+    <div id="furnaceMenu">
+        <div style="font-size:11px; font-weight:bold; color:#f97316; margin-bottom:6px; text-transform:uppercase; letter-spacing:1px; text-align: center;">Furnace GUI</div>
+        <div class="furnace-layout">
+            <div style="display:flex; flex-direction:column; gap:8px;">
+                <div id="furnaceItemSlot" class="slot" data-furnace="item">Item</div>
+                <div id="furnaceFuelSlot" class="slot" data-furnace="fuel">Fuel</div>
+            </div>
+            <div style="font-size: 24px; color:#f97316; font-weight:bold; text-align:center;">➔<div id="furnaceProgress" style="font-size:10px; color:#aaa; margin-top:2px;">0%</div></div>
+            <div><div id="furnaceResultSlot" class="slot" data-furnace="result" style="border-color: #f59e0b; background:#2e2216;">Result</div></div>
+        </div>
+    </div>
+    <div id="brickFurnaceMenu">
+        <div style="font-size:12px; font-weight:bold; color:#dc2626; margin-bottom:10px; text-transform:uppercase; letter-spacing:1px; text-align: center;">Industrial Brick Furnace</div>
+        <div class="bfurnace-layout">
+            <div class="bfurnace-col">
+                <div class="bfurnace-row"><div id="bfurnaceItem0" class="slot" data-bfurnace="item0">In 1</div><div id="bfurnaceItem1" class="slot" data-bfurnace="item1">In 2</div><div id="bfurnaceItem2" class="slot" data-bfurnace="item2">In 3</div></div>
+                <div class="bfurnace-row" style="margin-top: 12px;"><div id="bfurnaceFuelSlot" class="slot" data-bfurnace="fuel" style="border-color:#f97316;">Fuel</div></div>
+            </div>
+            <div class="bfurnace-col"><div class="bfurnace-arrow">➔</div><div id="bfurnaceProgress" style="font-size:10px; color:#aaa; text-align:center; margin-top:2px;">0%</div></div>
+            <div class="bfurnace-col"><div class="bfurnace-row"><div id="bfurnaceResult0" class="slot" data-bfurnace="result0" style="border-color: #10b981; background:#132d24;">Out 1</div><div id="bfurnaceResult1" class="slot" data-bfurnace="result1" style="border-color: #10b981; background:#132d24;">Out 2</div><div id="bfurnaceResult2" class="slot" data-bfurnace="result2" style="border-color: #10b981; background:#132d24;">Out 3</div></div></div>
+        </div>
+    </div>
+    <div id="loomMenu">
+        <div style="font-size:12px; font-weight:bold; color:#16a34a; margin-bottom:10px; text-transform:uppercase; letter-spacing:1px; text-align: center;">Ткацкий станок</div>
+        <div class="loom-layout">
+            <div class="loom-col"><div style="font-size: 10px; color: #aaa;">Пряжа</div><div id="loomItemSlot" class="slot" data-loom="item">Пряжа</div></div>
+            <div class="loom-col" style="gap: 12px;"><div class="loom-progress-outer"><div id="loomProgressBar" class="loom-progress-inner"></div></div><div id="loomProgressText" style="font-size:10px; color:#aaa;">0%</div><button id="loomWorkBtn" class="loom-work-btn">Работать</button></div>
+            <div class="loom-col"><div style="font-size: 10px; color: #aaa;">Ткань</div><div id="loomResultSlot" class="slot" data-loom="result" style="border-color: #10b981; background:#132d24;">Ткань</div></div>
+        </div>
+    </div>
+    <div id="scoreShopMenu" style="display: none; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(20, 20, 20, 0.98); border: 3px solid #eab308; border-radius: 14px; padding: 25px; color: white; box-shadow: 0 15px 40px rgba(0,0,0,0.85); z-index: 30; min-width: 300px;">
+        <div class="panel-title" style="color: #eab308; border-bottom: 2px solid #eab308; padding-bottom: 6px; font-weight: bold; text-align: center; margin-bottom: 15px; text-transform: uppercase; letter-spacing: 1.5px;">Score Upgrade Shop</div>
+        <div style="display: flex; flex-direction: column; gap: 12px;">
+            <button id="buyRadiusBtn" style="padding: 10px; background: #3b82f6; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; transition: background 0.2s;"></button>
+            <button id="buySpeedBtn" style="padding: 10px; background: #10b981; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; transition: background 0.2s;"></button>
+            <button id="buyHpBtn" style="padding: 10px; background: #ef4444; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; transition: background 0.2s;"></button>
+            <button id="closeShopBtn" style="padding: 10px; background: #4b5563; color: white; border: none; border-radius: 6px; cursor: pointer; margin-top: 10px; font-weight: bold;">Close Shop</button>
+        </div>
+    </div>
+    <div id="unifiedMenu">
+        <div class="menu-layout">
+            <div>
+                <div class="panel-title">Player Storage Cargo</div>
+                <div id="inventoryGrid" class="grid"></div>
+                <p id="desktopControlsGuide" style="font-size: 11px; color: #aaa; margin-top: 12px; line-height: 1.5;">Templates & Controls:<br>⌨️ <b>1 - 9 Keys:</b> Select active hotbar element action.<br>⌨️ <b>R Key:</b> Dismount / Pack up current Raft vehicle.<br>⌨️ <b>ESC Key:</b> Save game and return to Main Menu.<br>⌨️ <b>~ Key:</b> Open Developer Menu.<br>🖱️ <b>Left Click Slots:</b> Select / Place full stack.<br>🖱️ <b>Right Click Slots:</b> Select 1 item / Drop 1 item from stack.<br>🏗️ <b>Right Click on World Tiles:</b> Place block elements or Deploy Raft / Set Spawn Bed.<br>📱 <b>Mobile Taps:</b> Single tap maps to LMB (Harvest). Double tap maps to RMB (Place / Drink / Eat).</p>
+            </div>
+            <div>
+                <div class="panel-title">3x3 Assembly Workbench</div>
+                <div class="crafting-interface">
+                    <div id="craftingGrid" class="grid"></div>
+                    <div class="craft-arrow">➔</div>
+                    <div style="text-align: center;"><div style="font-size:11px; color:#aaa; margin-bottom:5px;">Result</div><div id="craftOutputSlot" class="slot"></div></div>
+                </div>
+            </div>
+            <div><div class="panel-title">Recipe Quick Book</div><div id="recipeBookGrid" class="grid"></div></div>
+        </div>
+    </div>
+    <div id="hotbarContainer"><div class="hotbar-label">Hotbar</div><div id="hotbarGrid" class="grid"></div></div>
+    <div id="interactionPrompt">Notification System</div>
+    
+    <script>
+        // 1. ВСТРОЕННЫЙ СЕТЕВОЙ МОДУЛЬ
+        let socket = null; let isMultiplayerMode = false; let serverIp = "localhost:3000"; let remotePlayers = {}; let isIncomingSync = false; let playerNickname = "Survivor";
+        function initNetworkMenu() {
+            const startBtn = document.getElementById("startBtn"); if (!startBtn) return;
+            const mainPanel = document.getElementById("menuPrimaryPanel"); const multiplayerPanel = document.getElementById("menuMultiplayerPanel");
+            const mpModeBtn = document.getElementById("multiplayerModeBtn"); const connectBtn = document.getElementById("connectMultiplayerBtn"); const backBtn = document.getElementById("multiBackBtn");
+            if (mpModeBtn && mainPanel && multiplayerPanel) mpModeBtn.addEventListener("click", () => { mainPanel.style.display = "none"; multiplayerPanel.style.display = "flex"; });
+            if (backBtn && mainPanel && multiplayerPanel) backBtn.addEventListener("click", () => { multiplayerPanel.style.display = "none"; mainPanel.style.display = "flex"; });
+            if (connectBtn) connectBtn.addEventListener("click", () => { serverIp = document.getElementById("serverIpInput").value.trim() || "localhost:3000"; playerNickname = document.getElementById("nicknameInput").value.trim() || "Survivor"; connectToServer(); });
+        }
+        function connectToServer() {
+            showNotification("Подключение к " + serverIp + "...");
+            const script = document.createElement('script'); script.src = `http://${serverIp}/socket.io/socket.io.js`;
+            script.onload = () => { setupNetworkHandlers(); }; script.onerror = () => { alert("Ошибка сети! Проверьте server.js и IP."); };
+            document.head.appendChild(script);
+        }
+        function setupNetworkHandlers() {
+            socket = io(`http://${serverIp}`);
+            socket.on('connect', () => { isMultiplayerMode = true; });
+            socket.on('init_world', (data) => {
+                isIncomingSync = true;
+                if (window.worldModifications && data.worldModifications) { window.worldModifications.clear(); for (let key in data.worldModifications) { window.worldModifications.set(key, data.worldModifications[key]); } }
+                remotePlayers = data.players; delete remotePlayers[socket.id];
+                if (data.seed !== undefined) NOISE_SEED = data.seed;
+                if (data.floorItems) floorItems = data.floorItems;
+                if (data.animals) animals = data.animals;
+                isIncomingSync = false; launchGameViaNativeEngine();
+            });
+            socket.on('player_joined', (playerData) => { playerData.renderX = playerData.x; playerData.renderY = playerData.y; remotePlayers[playerData.id] = playerData; showNotification(`${playerData.nickname || 'Игрок'} подключился.`); });
+            socket.on('player_updated', (playerData) => { 
+                if (remotePlayers[playerData.id]) { 
+                    let rX = remotePlayers[playerData.id].renderX; let rY = remotePlayers[playerData.id].renderY;
+                    remotePlayers[playerData.id] = playerData; 
+                    remotePlayers[playerData.id].renderX = rX; remotePlayers[playerData.id].renderY = rY;
+                } 
+            });
+            socket.on('player_left', (id) => { showNotification(`Игрок покинул мир.`); delete remotePlayers[id]; });
+            socket.on('player_damaged', (data) => { 
+                if (data.id === socket.id) { player.health = data.health; showNotification("Вам нанесли урон!"); }
+                else if (remotePlayers[data.id]) { remotePlayers[data.id].health = data.health; }
+            });
+            socket.on('receive_item', (data) => { 
+                let added = addItemToInventory(data.item.name, data.item.count, data.item.durability);
+                if (added) showNotification(`Получен предмет: ${data.item.name.toUpperCase()} от игрока`);
+                else showNotification(`Инвентарь полон! Предмет потерян.`);
+            });
+            socket.on('tile_modified', (data) => { isIncomingSync = true; if (window.worldModifications) { window.worldModifications.set(data.key, data.value); } isIncomingSync = false; });
+            socket.on('item_spawned', (item) => { floorItems.push(item); });
+            socket.on('item_picked_up', (data) => { 
+                const idx = floorItems.findIndex(i => i.id === data.id); 
+                if (idx !== -1) floorItems.splice(idx, 1); 
+                if (data.playerId === socket.id) { 
+                    addItemToInventory(data.item.name, data.item.count); 
+                    showNotification(`Подобрано: ${data.item.name.toUpperCase()} (x${data.item.count})`); 
+                } 
+            });
+            socket.on('animals_sync', (data) => { 
+                let updatedAnimals = [];
+                data.forEach(serverA => {
+                    let existing = animals.find(a => a.id === serverA.id);
+                    if (existing) { serverA.renderX = existing.renderX; serverA.renderY = existing.renderY; }
+                    else { serverA.renderX = serverA.x; serverA.renderY = serverA.y; }
+                    updatedAnimals.push(serverA);
+                });
+                animals = updatedAnimals;
+            });
+            socket.on('animal_killed', (data) => { const idx = animals.findIndex(a => a.id === data.id); if (idx !== -1) animals.splice(idx, 1); });
+            socket.on('animal_attack', (data) => { if (data.playerId === socket.id) { player.health -= 20; showNotification("Волк укусил вас! (-20 HP)"); } });
+        }
+        function launchGameViaNativeEngine() { const mp = document.getElementById("menuMultiplayerPanel"); if (mp) mp.style.display = "none"; const sb = document.getElementById("startBtn"); if (sb) sb.click(); showNotification("Успешное подключение к серверу!"); }
+        setTimeout(() => {
+            if (window.worldModifications) {
+                const oSet = window.worldModifications.set; window.worldModifications.set = function(k, v) { const r = oSet.call(window.worldModifications, k, v); if (isMultiplayerMode && !isIncomingSync && socket) socket.emit('tile_modify', { key: k, value: v }); return r; };
+                const oDel = window.worldModifications.delete; window.worldModifications.delete = function(k) { const r = oDel.call(window.worldModifications, k); if (isMultiplayerMode && !isIncomingSync && socket) socket.emit('tile_modify', { key: k, value: null }); return r; };
+            }
+        }, 1000);
+        setInterval(() => { if (isMultiplayerMode && socket && window.player) { socket.emit('player_update', { x: window.player.x, y: window.player.y, angle: window.player.angle, health: window.player.health, hunger: window.player.hunger, thirst: window.player.thirst, score: window.player.score, currentDimension: window.player.currentDimension || 'surface', onRaft: window.player.onRaft || false, nickname: playerNickname }); } }, 50);
+        const oRAF = window.requestAnimationFrame;
+        window.requestAnimationFrame = function(callback) {
+            let cC = callback;
+            if (callback && callback.name === 'gameLoop') { cC = function(ts) { callback(ts); if (isMultiplayerMode && window.gameState === 'play') renderRemotePlayers(); }; }
+            return oRAF(cC);
+        };
+        function renderRemotePlayers() {
+            if (!window.ctx || !window.player) return; const ctx = window.ctx; const cd = window.player.currentDimension || 'surface';
+            for (let id in remotePlayers) { 
+                const p = remotePlayers[id]; if (p.currentDimension !== cd) continue; 
+                if (p.renderX === undefined) { p.renderX = p.x; p.renderY = p.y; }
+                const sX = p.renderX - window.camX; const sY = p.renderY - window.camY; 
+                if (sX < -60 || sX > window.canvas.width + 60 || sY < -60 || sY > window.canvas.height + 60) continue; 
+                ctx.save(); ctx.translate(sX, sY); if (p.onRaft) { ctx.fillStyle = '#78350f'; ctx.fillRect(-24, -16, 48, 32); ctx.strokeStyle = '#451a03'; ctx.lineWidth = 2; ctx.strokeRect(-24, -16, 48, 32); } ctx.rotate(p.angle);
+                if (playerTexture.complete && playerTexture.naturalHeight !== 0) { ctx.drawImage(playerTexture, -24, -24, 48, 48); } 
+                else { ctx.fillStyle = '#8b5cf6'; ctx.beginPath(); ctx.arc(0, 0, 20, 0, Math.PI * 2); ctx.fill(); ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2; ctx.stroke(); }
+                ctx.restore(); 
+                ctx.fillStyle = '#ffffff'; ctx.font = 'bold 14px sans-serif'; ctx.textAlign = 'center'; ctx.shadowColor = 'black'; ctx.shadowBlur = 4; ctx.fillText(p.nickname || 'Survivor', sX, sY - 38); ctx.shadowBlur = 0; 
+                ctx.fillStyle = '#333333'; ctx.fillRect(sX - 25, sY - 30, 50, 5); const hp = Math.max(0, Math.min(50, (p.health / 100) * 50)); ctx.fillStyle = '#ef4444'; ctx.fillRect(sX - 25, sY - 30, hp, 5); 
+            }
+        }
+        document.addEventListener("DOMContentLoaded", () => { setTimeout(initNetworkMenu, 100); });
+        
+        // 2. ОСНОВНОЙ ДВИЖОК ИГРЫ
+        const TextureManager = { textures: {}, basePath: 'textures/', load: function(c, n) { const k = `${c}/${n}`; const i = new Image(); i.src = this.basePath + k + '.png'; i.onerror = () => { delete this.textures[k]; }; this.textures[k] = i; }, get: function(c, n) { const k = `${c}/${n}`; const i = this.textures[k]; if (i && i.complete && i.naturalHeight !== 0) return i; return null; } };
+        const playerTexture = new Image(); playerTexture.src = 'player.png';
+        const canvas = document.getElementById('gameCanvas'); const ctx = canvas.getContext('2d'); window.canvas = canvas; window.ctx = ctx;
+        function resizeCanvas() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; } window.addEventListener('resize', resizeCanvas); resizeCanvas();
+        let gameState = 'menu'; let mobileModeEnabled = false; let currentSaveId = null; const TILE_SIZE = 64; let NOISE_SEED = Math.random() * 100000; 
+        function stringToSeed(s) { let h = 0; if (s.length === 0) return h; for (let i = 0; i < s.length; i++) { let c = s.charCodeAt(i); h = ((h << 5) - h) + c; h = h & h; } return Math.abs(h); }
+        function MathNoise2D(x, y) { let n = Math.sin(x * 12.9898 + y * 78.233 + NOISE_SEED) * 43758.5453123; return n - Math.floor(n); }
+        function smoothNoise2D(x, y) { let cx = Math.floor(x); let cy = Math.floor(y); let fx = x - cx; let fy = y - cy; let ux = fx * fx * (3.0 - 2.0 * fx); let uy = fy * fy * (3.0 - 2.0 * fy); let v00 = MathNoise2D(cx, cy); let v10 = MathNoise2D(cx + 1, cy); let v01 = MathNoise2D(cx, cy + 1); let v11 = MathNoise2D(cx + 1, cy + 1); return v00 * (1 - ux) * (1 - uy) + v10 * ux * (1 - uy) + v01 * (1 - ux) * uy + v11 * ux * uy; }
+        function fbm2D(x, y, o = 3) { let v = 0; let a = 1.0; let f = 1.0; let m = 0; for(let i=0; i<o; i++) { v += a * smoothNoise2D(x * f, y * f); m += a; a *= 0.5; f *= 2.0; } return v / m; }
+        const BIOMES = { SEA: { name: 'Sea', color: '#1d4ed8', drinkable: true }, RIVER: { name: 'River', color: '#3b82f6', drinkable: true }, BEACH_SAND: { name: 'Sand Beach', color: '#fde68a', drinkable: false }, BEACH_CLAY: { name: 'Clay Beach', color: '#a16207', drinkable: false }, DESERT: { name: 'Desert', color: '#fef08a', drinkable: false }, STEPPE: { name: 'Steppe', color: '#ca8a04', drinkable: false }, PLAIN: { name: 'Plain', color: '#4ade80', drinkable: false }, FOREST: { name: 'Forest', color: '#16a34a', drinkable: false }, TAIGA: { name: 'Taiga Forest', color: '#115e59', drinkable: false }, TUNDRA: { name: 'Tundra', color: '#cbd5e1', drinkable: false } };
+        Object.keys(BIOMES).forEach(k => TextureManager.load('tiles', k.toLowerCase())); TextureManager.load('tiles', 'cave'); 
+        const RECIPES = [ { name: 'AXE', ingredients: { 'rock': 3, 'stick': 2 } }, { name: 'PICKAXE', ingredients: { 'rock': 3, 'stick': 2 } }, { name: 'SHOVEL', ingredients: { 'rock': 1, 'stick': 2 } }, { name: 'STONE SPEAR', ingredients: { 'rock': 1, 'stick': 2 } }, { name: 'STONE KNIFE', ingredients: { 'rock': 1, 'stick': 1 } }, { name: 'BOW', ingredients: { 'stick': 3, 'sinew': 3 } }, { name: 'ARROW', ingredients: { 'stick': 8, 'rock': 1 }, outputCount: 8 }, { name: 'PRIMITIVE FURNACE', ingredients: { 'rock': 5, 'mud': 3 } }, { name: 'RAFT', ingredients: { 'log': 3 } }, { name: 'DOOR', ingredients: { 'log': 2 } }, { name: 'BRICK WALL', ingredients: { 'brick': 4 } }, { name: 'BRICK FURNACE', ingredients: { 'brick wall': 3, 'brick': 5 } }, { name: 'GUNPOWDER', ingredients: { 'sulfur': 1, 'coal': 1 } }, { name: 'BULLET', ingredients: { 'gunpowder': 8, 'copper ingot': 1 }, outputCount: 8 }, { name: 'MUSKET', ingredients: { 'iron ingot': 3, 'log': 1 } }, { name: 'CLAY VESSEL', ingredients: { 'clay': 3 } }, { name: 'BOTTLE', ingredients: { 'glass': 2 } }, { name: 'BOTTLE OF JUICE', ingredients: { 'bottle': 1, 'apple': 1 } }, { name: 'BOTTLE OF JUICE', ingredients: { 'bottle': 1, 'wildberries': 1 } }, { name: 'BOTTLE OF JUICE', ingredients: { 'bottle': 1, 'carrot': 1 } }, { name: 'COPPER AXE', ingredients: { 'copper ingot': 3, 'stick': 2 } }, { name: 'COPPER PICKAXE', ingredients: { 'copper ingot': 3, 'stick': 2 } }, { name: 'COPPER SHOVEL', ingredients: { 'copper ingot': 1, 'stick': 2 } }, { name: 'BRONZE AXE', ingredients: { 'bronze ingot': 3, 'stick': 2 } }, { name: 'BRONZE PICKAXE', ingredients: { 'bronze ingot': 3, 'stick': 2 } }, { name: 'BRONZE SHOVEL', ingredients: { 'bronze ingot': 1, 'stick': 2 } }, { name: 'IRON AXE', ingredients: { 'iron ingot': 3, 'stick': 2 } }, { name: 'IRON PICKAXE', ingredients: { 'iron ingot': 3, 'stick': 2 } }, { name: 'IRON SHOVEL', ingredients: { 'iron ingot': 1, 'stick': 2 } }, { name: 'BRONZE INGOT', ingredients: { 'copper ingot': 3, 'tin ingot': 1 } }, { name: 'COPPER SPEAR', ingredients: { 'copper ingot': 2, 'stick': 2 } }, { name: 'COPPER KNIFE', ingredients: { 'copper ingot': 1, 'stick': 1 } }, { name: 'BRONZE SPEAR', ingredients: { 'bronze ingot': 2, 'stick': 2 } }, { name: 'BRONZE KNIFE', ingredients: { 'bronze ingot': 1, 'stick': 1 } }, { name: 'IRON SPEAR', ingredients: { 'iron ingot': 2, 'stick': 2 } }, { name: 'IRON KNIFE', ingredients: { 'iron ingot': 1, 'stick': 1 } }, { name: 'SPINDLE', ingredients: { 'stick': 3 } }, { name: 'YARN', ingredients: { 'wool': 1 }, toolRequired: 'spindle' }, { name: 'LOOM', ingredients: { 'log': 2, 'stick': 3 } }, { name: 'BED', ingredients: { 'log': 3, 'cloth': 3 } } ];
+        const DEV_RESOURCES = [ 'rock', 'stick', 'log', 'mud', 'sand', 'clay', 'coal', 'sulfur', 'copper ore', 'tin ore', 'iron ore', 'copper ingot', 'tin ingot', 'iron ingot', 'bronze ingot', 'brick', 'glass', 'apple', 'wildberries', 'carrot', 'meat', 'cooked meat', 'seaweed', 'hide', 'fat', 'wool', 'sinew', 'gunpowder', 'bullet', 'clay vessel', 'fired clay vessel', 'fired clay vessel with water', 'bottle', 'bottle of juice', 'axe', 'pickaxe', 'shovel', 'stone spear', 'stone knife', 'bow', 'arrow', 'musket', 'primitive furnace', 'raft', 'door', 'brick wall', 'brick furnace', 'copper axe', 'copper pickaxe', 'copper shovel', 'bronze axe', 'bronze pickaxe', 'bronze shovel', 'iron axe', 'iron pickaxe', 'iron shovel', 'copper spear', 'copper knife', 'bronze spear', 'bronze knife', 'iron spear', 'iron knife', 'spindle', 'yarn', 'cloth', 'loom', 'bed' ];
+        const DEV_OBJECTS = [ { name: 'Tree', type: 'tree', data: { health: 3 } }, { name: 'Stone', type: 'stone', data: { health: 4 } }, { name: 'Cave Entrance', type: 'cave_entrance', data: {} }, { name: 'Bush', type: 'bush', data: { health: 2 } }, { name: 'Seaweed', type: 'seaweed_plant', data: { health: 1 } }, { name: 'Placed Log', type: 'placed_log', data: { health: 3 } }, { name: 'Door', type: 'door', data: { health: 2 } }, { name: 'Brick Wall', type: 'brick_wall', data: { health: 5 } }, { name: 'Primitive Furnace', type: 'furnace', data: { cookProgress: 0, itemSlot: null, fuelSlot: null, resultSlot: null } }, { name: 'Brick Furnace', type: 'brick_furnace', data: { cookProgress: [0,0,0], itemSlots: [null,null,null], fuelSlot: null, resultSlots: [null,null,null] } }, { name: 'Copper Ore', type: 'copper_ore', data: { health: 4 } }, { name: 'Tin Ore', type: 'tin_ore', data: { health: 3 } }, { name: 'Iron Ore', type: 'iron_ore', data: { health: 5 } }, { name: 'Sulfur Ore', type: 'sulfur_ore', data: { health: 3 } }, { name: 'Coal Ore', type: 'coal_ore', data: { health: 3 } }, { name: 'Loom', type: 'loom', data: { itemSlot: null, resultSlot: null, progress: 0 } }, { name: 'Bed', type: 'bed', data: { health: 2 } } ];
+        const DEV_ANIMALS = ['pig', 'sheep', 'deer', 'wolf'];
+        DEV_OBJECTS.forEach(o => TextureManager.load('objects', o.type)); DEV_ANIMALS.forEach(a => TextureManager.load('animals', a)); DEV_RESOURCES.forEach(r => TextureManager.load('items', r.toLowerCase().replace(/ /g, '_')));
+        const WEAPON_STATS = { 'STONE SPEAR': { damage: 25, range: 120, cooldown: 1.0 }, 'STONE KNIFE': { damage: 10, range: 50, cooldown: 0.4 }, 'COPPER SPEAR': { damage: 40, range: 120, cooldown: 1.0 }, 'COPPER KNIFE': { damage: 20, range: 50, cooldown: 0.4 }, 'BRONZE SPEAR': { damage: 50, range: 120, cooldown: 1.0 }, 'BRONZE KNIFE': { damage: 25, range: 50, cooldown: 0.4 }, 'IRON SPEAR': { damage: 60, range: 120, cooldown: 1.0 }, 'IRON KNIFE': { damage: 30, range: 50, cooldown: 0.4 }, 'BOW': { damage: 30, range: 600, cooldown: 1.0 }, 'MUSKET': { damage: 100, range: 1200, cooldown: 1.5 }, 'BARE HANDS': { damage: 1, range: 40, cooldown: 0.5 } };
+        function getBiomeAt(tileX, tileY) { let e = fbm2D(tileX * 0.02, tileY * 0.02, 4); let t = fbm2D(tileX * 0.015 + 200, tileY * 0.015 + 200, 3); let m = fbm2D(tileX * 0.02 + 400, tileY * 0.02 + 400, 3); if (e < 0.38) return BIOMES.SEA; let rp = Math.abs(Math.sin(fbm2D(tileX * 0.05 + 600, tileY * 0.05 + 600, 2) * Math.PI)); if (rp < 0.12) return BIOMES.RIVER; if (e < 0.42) { let bn = fbm2D(tileX * 0.1 + 1000, tileY * 0.1 + 1000, 2); return bn > 0.5 ? BIOMES.BEACH_SAND : BIOMES.BEACH_CLAY; } if (t < 0.35) return (m < 0.45) ? BIOMES.TUNDRA : BIOMES.TAIGA; else if (t < 0.65) { if (m < 0.35) return BIOMES.STEPPE; return (m < 0.65) ? BIOMES.PLAIN : BIOMES.FOREST; } else { if (m < 0.35) return BIOMES.DESERT; return (m < 0.60) ? BIOMES.STEPPE : BIOMES.PLAIN; } }
+        let worldModifications = new Map(); window.worldModifications = worldModifications; let floorItems = []; let animals = []; let projectiles = []; 
+        let player = { x: 0, y: 0, speed: 5, angle: 0, health: 100, maxHealth: 100, hunger: 100, maxHunger: 100, thirst: 100, maxThirst: 100, onRaft: false, currentDimension: 'surface', teleportCooldown: 0, score: 0, collectRadius: 90, radiusCost: 50, speedCost: 75, hpCost: 100, attackCooldown: 0, waterFillCooldown: 0, spawnX: 32, spawnY: 32 };
+        let camX = 0; let camY = 0; let activeHotbarIndex = 0; let currentFurnaceTile = null; let currentBrickFurnaceTile = null; let currentLoomTile = null;
+        let inventory = Array(27).fill(null); let craftingGrid = Array(9).fill(null); let hotbar = Array(9).fill(null); let craftOutput = null; let heldItem = null; 
+        let inputs = { KeyW: false, KeyA: false, KeyS: false, KeyD: false }; let mouseWorldPos = { x: 0, y: 0 }; let mouseScreenPos = { x: 0, y: 0 };
+        let joystickActive = false; let joystickX = 0; let joystickY = 0; let joystickTouchId = null;
+        function getTileKey(tx, ty, dim = player.currentDimension) { return `${dim}_${tx},${ty}`; }
+                function generateTileFeatures(tx, ty, biome) {
+            if (biome !== BIOMES.SEA && biome !== BIOMES.RIVER) { let re = Math.sin(tx * 12.9898 + ty * 78.233 + NOISE_SEED + 500) * 43758.5453123; re = re - Math.floor(re); if (re > 0.9998) { let f = { type: 'cave_entrance' }; worldModifications.set(getTileKey(tx, ty, 'surface'), f); worldModifications.set(getTileKey(tx, ty, 'cave'), f); return f; } }
+            let dim = player.currentDimension; let key = getTileKey(tx, ty, dim); if (worldModifications.has(key)) return worldModifications.get(key);
+            let rand = MathNoise2D(tx, ty); let feature = null;
+            if (dim === 'cave') { if (rand < 0.05) feature = { type: 'iron_ore', health: 5 }; else if (rand < 0.11) feature = { type: 'copper_ore', health: 4 }; else if (rand < 0.17) feature = { type: 'tin_ore', health: 3 }; else if (rand < 0.19) feature = { type: 'sulfur_ore', health: 3 }; else if (rand < 0.24) feature = { type: 'coal_ore', health: 3 }; else if (rand < 0.38) feature = { type: 'stone', health: 4 }; worldModifications.set(key, feature); return feature; }
+            if (biome === BIOMES.SEA) { if (rand < 0.06) feature = { type: 'seaweed_plant', health: 1 }; } 
+            else if (biome === BIOMES.FOREST || biome === BIOMES.TAIGA) { 
+                if (rand < 0.08) feature = { type: 'tree', health: 3 }; 
+                else if (rand < 0.095 && !isMultiplayerMode) spawnFloorItem(tx * TILE_SIZE + 32, ty * TILE_SIZE + 32, 'stick', 1); 
+                else if (rand < 0.105 && !isMultiplayerMode) spawnFloorItem(tx * TILE_SIZE + 32, ty * TILE_SIZE + 32, 'apple', 1); 
+                if (biome === BIOMES.TAIGA && rand > 0.85 && rand < 0.88 && !isMultiplayerMode) spawnFloorItem(tx * TILE_SIZE + 40, ty * TILE_SIZE + 40, 'wildberries', 1); 
+                if (biome === BIOMES.FOREST && rand > 0.90 && rand < 0.92 && !isMultiplayerMode) spawnFloorItem(tx * TILE_SIZE + 40, ty * TILE_SIZE + 40, 'carrot', 1); 
+            } 
+            else if (biome === BIOMES.PLAIN || biome === BIOMES.STEPPE || biome === BIOMES.DESERT) { 
+                if (rand < 0.04) feature = { type: 'stone', health: 4 }; 
+                else if (rand < 0.055 && biome !== BIOMES.DESERT && !isMultiplayerMode) spawnFloorItem(tx * TILE_SIZE + 32, ty * TILE_SIZE + 32, 'rock', 1); 
+                if (rand > 0.93 && rand < 0.95 && !isMultiplayerMode) spawnFloorItem(tx * TILE_SIZE + 40, ty * TILE_SIZE + 40, 'carrot', 1); 
+            } 
+            else if (biome === BIOMES.TUNDRA) { if (rand > 0.85 && rand < 0.88 && !isMultiplayerMode) spawnFloorItem(tx * TILE_SIZE + 40, ty * TILE_SIZE + 40, 'wildberries', 1); }
+            if (!feature && biome !== BIOMES.SEA && biome !== BIOMES.RIVER && biome !== BIOMES.DESERT && biome !== BIOMES.BEACH_SAND && biome !== BIOMES.BEACH_CLAY) { if (rand > 0.40 && rand < 0.48) feature = { type: 'bush', health: 2 }; }
+            if (!feature && rand > 0.994) { if (biome === BIOMES.PLAIN || biome === BIOMES.STEPPE || biome === BIOMES.DESERT || biome === BIOMES.TUNDRA) feature = { type: 'coal_ore', health: 3 }; }
+            if (!feature && biome !== BIOMES.SEA && biome !== BIOMES.RIVER) { let cv = fbm2D(tx * 0.045 + 700, ty * 0.045 + 700, 2); let tv = fbm2D(tx * 0.05 + 800, ty * 0.05 + 800, 2); let iv = fbm2D(tx * 0.055 + 900, ty * 0.055 + 900, 2); if (cv > 0.81 && rand < 0.10) feature = { type: 'copper_ore', health: 4 }; else if (tv > 0.84 && rand < 0.06) feature = { type: 'tin_ore', health: 3 }; else if (iv > 0.86 && rand < 0.035) feature = { type: 'iron_ore', health: 5 }; }
+            worldModifications.set(key, feature); return feature;
+        }
+        function spawnFloorItem(wx, wy, name, count) { floorItems.push({ x: wx, y: wy, name: name, count: count, id: Math.random().toString(36).substr(2, 9), dim: player.currentDimension }); }
+        player.currentDimension = 'surface'; if (!isMultiplayerMode) { spawnFloorItem(40, 40, 'stick', 2); spawnFloorItem(-80, 60, 'rock', 2); spawnFloorItem(60, -40, 'apple', 2); }
+        function getGridArrayByType(type) { if (type === 'inventory') return inventory; if (type === 'crafting') return craftingGrid; if (type === 'hotbar') return hotbar; return null; }
+        function addItemToInventory(name, count, durability) { let isTool = name.toLowerCase().includes('axe') || name.toLowerCase().includes('pickaxe') || name.toLowerCase().includes('shovel') || name.toLowerCase().includes('spear') || name.toLowerCase().includes('knife') || name.toLowerCase().includes('bow') || name.toLowerCase().includes('musket') || name.toLowerCase().includes('spindle'); if (!isTool || durability === undefined) { for (let i = 0; i < hotbar.length; i++) { if (hotbar[i] && hotbar[i].name === name) { hotbar[i].count += count; updateUiPanels(); return true; } } for (let i = 0; i < inventory.length; i++) { if (inventory[i] && inventory[i].name === name) { inventory[i].count += count; updateUiPanels(); return true; } } } for (let i = 0; i < hotbar.length; i++) { if (!hotbar[i]) { hotbar[i] = { name: name, count: count }; if (durability !== undefined) hotbar[i].durability = durability; updateUiPanels(); return true; } } for (let i = 0; i < inventory.length; i++) { if (!inventory[i]) { inventory[i] = { name: name, count: count }; if (durability !== undefined) inventory[i].durability = durability; updateUiPanels(); return true; } } return false; }
+        function getActiveTool(toolType) { let t = toolType.toUpperCase(); let active = hotbar[activeHotbarIndex]; if (!active) return null; let itemName = active.name.toUpperCase().trim(); let isMatch = false; if (t === 'AXE') isMatch = itemName.endsWith('AXE') && !itemName.includes('PICKAXE'); else if (t === 'PICKAXE') isMatch = itemName.includes('PICKAXE'); else if (t === 'SHOVEL') isMatch = itemName.endsWith('SHOVEL'); if (isMatch) return { slot: active, grid: hotbar, index: activeHotbarIndex }; return null; }
+        function getActiveWeapon() { let active = hotbar[activeHotbarIndex]; if (!active) return { name: 'BARE HANDS', slot: null }; let name = active.name.toUpperCase(); if (name.includes('SPEAR') || name.includes('KNIFE') || name.includes('BOW') || name.includes('MUSKET')) return { name: name, slot: active }; return { name: 'BARE HANDS', slot: null }; }
+        function rollToolBreak(toolRef) { if (!toolRef || !toolRef.slot || toolRef.slot.durability === undefined) return false; toolRef.slot.durability--; if (toolRef.slot.durability <= 0) { const bn = toolRef.slot.name; toolRef.grid[toolRef.index] = null; showNotification(`${bn.toUpperCase()} BROKE!`); updateUiPanels(); return true; } updateUiPanels(); return false; }
+        function updateCraftingCheck() { craftOutput = null; const gn = craftingGrid.map(s => s ? s.name.toLowerCase() : ""); const ar = ['rock','rock','','rock','stick','','','stick','']; const pr = ['rock','rock','rock','','stick','','','stick','']; const sr = ['','rock','','','stick','','','stick','']; const spr = ['','','','stick','','','rock','stick','']; const kr = ['','rock','','','stick','','','','']; const br = ['','','','stick','stick','stick','sinew','sinew','sinew']; const arr = ['stick','stick','stick','stick','rock','stick','stick','stick','stick']; const fr = ['rock','rock','rock','rock','','rock','mud','mud','mud']; const rr = ['','','','','','','log','log','log']; const dr = ['log','','','log','','','','','']; const bwr = ['brick','brick','','brick','brick','','','','']; const bfr = ['brick wall','brick wall','brick wall','brick','','brick','brick','brick','brick']; const bur = ['gunpowder','gunpowder','gunpowder','gunpowder','copper ingot','gunpowder','gunpowder','gunpowder','gunpowder']; const mr = ['','iron ingot','','','iron ingot','','log','iron ingot','']; const ca = ['copper ingot','copper ingot','','copper ingot','stick','','','stick','']; const cp = ['copper ingot','copper ingot','copper ingot','','stick','','','stick','']; const cs = ['','copper ingot','','','stick','','','stick','']; const ba = ['bronze ingot','bronze ingot','','bronze ingot','stick','','','stick','']; const bp = ['bronze ingot','bronze ingot','bronze ingot','','stick','','','stick','']; const bs = ['','bronze ingot','','','stick','','','stick','']; const ia = ['iron ingot','iron ingot','','iron ingot','stick','','','stick','']; const ip = ['iron ingot','iron ingot','iron ingot','','stick','','','stick','']; const is = ['','iron ingot','','','stick','','','stick','']; const csp = ['','','','stick','','','copper ingot','stick','']; const ck = ['','copper ingot','','','stick','','','','']; const bsp = ['','','','stick','','','bronze ingot','stick','']; const bk = ['','bronze ingot','','','stick','','','','']; const isp = ['','','','stick','','','iron ingot','stick','']; const ik = ['','iron ingot','','','stick','','','','']; const spR = ['','','','stick','stick','stick','','','']; const loomR = ['','stick','','stick','log','stick','log','','log']; const bedR = ['log','log','log','cloth','cloth','cloth','','','']; const cvr = ['', 'clay', '', 'clay', 'clay', 'clay', '', 'clay', '']; const btr = ['', 'glass', '', '', 'glass', '', '', '', '']; let ci = 0, ti = 0, sc = 0, cc = 0, ex = 0; craftingGrid.forEach(s => { if (s) { let n = s.name.toLowerCase(); if (n === 'copper ingot') ci++; else if (n === 'tin ingot') ti++; else if(n==='sulfur') sc++; else if(n==='coal') cc++; else ex++; } }); let tot = 0, bc = 0, fc = 0; craftingGrid.forEach(s => { if (s) { tot++; let n = s.name.toLowerCase(); if (n === 'bottle') bc++; else if (['apple', 'wildberries', 'carrot'].includes(n)) fc++; } }); if (gn.every((v, i) => v === ar[i])) craftOutput = { name: 'AXE', count: 1 }; else if (gn.every((v, i) => v === pr[i])) craftOutput = { name: 'PICKAXE', count: 1 }; else if (gn.every((v, i) => v === sr[i])) craftOutput = { name: 'SHOVEL', count: 1 }; else if (gn.every((v, i) => v === spr[i])) craftOutput = { name: 'STONE SPEAR', count: 1 }; else if (gn.every((v, i) => v === kr[i])) craftOutput = { name: 'STONE KNIFE', count: 1 }; else if (gn.every((v, i) => v === br[i])) craftOutput = { name: 'BOW', count: 1 }; else if (gn.every((v, i) => v === arr[i])) craftOutput = { name: 'ARROW', count: 8 }; else if (gn.every((v, i) => v === fr[i])) craftOutput = { name: 'PRIMITIVE FURNACE', count: 1 }; else if (gn.every((v, i) => v === rr[i])) craftOutput = { name: 'RAFT', count: 1 }; else if (gn.every((v, i) => v === dr[i])) craftOutput = { name: 'DOOR', count: 1 }; else if (gn.every((v, i) => v === bwr[i])) craftOutput = { name: 'BRICK WALL', count: 1 }; else if (gn.every((v, i) => v === bfr[i])) craftOutput = { name: 'BRICK FURNACE', count: 1 }; else if (gn.every((v, i) => v === bur[i])) craftOutput = { name: 'BULLET', count: 8 }; else if (gn.every((v, i) => v === mr[i])) craftOutput = { name: 'MUSKET', count: 1 }; else if (gn.every((v, i) => v === cvr[i])) craftOutput = { name: 'CLAY VESSEL', count: 1 }; else if (gn.every((v, i) => v === btr[i])) craftOutput = { name: 'BOTTLE', count: 1 }; else if (gn.every((v, i) => v === ca[i])) craftOutput = { name: 'COPPER AXE', count: 1 }; else if (gn.every((v, i) => v === cp[i])) craftOutput = { name: 'COPPER PICKAXE', count: 1 }; else if (gn.every((v, i) => v === cs[i])) craftOutput = { name: 'COPPER SHOVEL', count: 1 }; else if (gn.every((v, i) => v === ba[i])) craftOutput = { name: 'BRONZE AXE', count: 1 }; else if (gn.every((v, i) => v === bp[i])) craftOutput = { name: 'BRONZE PICKAXE', count: 1 }; else if (gn.every((v, i) => v === bs[i])) craftOutput = { name: 'BRONZE SHOVEL', count: 1 }; else if (gn.every((v, i) => v === ia[i])) craftOutput = { name: 'IRON AXE', count: 1 }; else if (gn.every((v, i) => v === ip[i])) craftOutput = { name: 'IRON PICKAXE', count: 1 }; else if (gn.every((v, i) => v === is[i])) craftOutput = { name: 'IRON SHOVEL', count: 1 }; else if (gn.every((v, i) => v === csp[i])) craftOutput = { name: 'COPPER SPEAR', count: 1 }; else if (gn.every((v, i) => v === ck[i])) craftOutput = { name: 'COPPER KNIFE', count: 1 }; else if (gn.every((v, i) => v === bsp[i])) craftOutput = { name: 'BRONZE SPEAR', count: 1 }; else if (gn.every((v, i) => v === bk[i])) craftOutput = { name: 'BRONZE KNIFE', count: 1 }; else if (gn.every((v, i) => v === isp[i])) craftOutput = { name: 'IRON SPEAR', count: 1 }; else if (gn.every((v, i) => v === ik[i])) craftOutput = { name: 'IRON KNIFE', count: 1 }; else if (gn.every((v, i) => v === spR[i])) craftOutput = { name: 'SPINDLE', count: 1 }; else if (gn.every((v, i) => v === loomR[i])) craftOutput = { name: 'LOOM', count: 1 }; else if (gn.every((v, i) => v === bedR[i])) craftOutput = { name: 'BED', count: 1 }; else if (ci === 3 && ti === 1 && ex === 0) craftOutput = { name: 'BRONZE INGOT', count: 1 }; else if (sc === 1 && cc === 1 && ex === 0) craftOutput = { name: 'GUNPOWDER', count: 1 }; else if (tot === 2 && bc === 1 && fc === 1) craftOutput = { name: 'BOTTLE OF JUICE', count: 1 }; renderCraftOutputSlot(); }
+        function executeAutoCraft(recipe) { if (recipe.toolRequired) { let hasTool = false; const ca = (arr) => arr.forEach(s => { if (s && s.name.toLowerCase() === recipe.toolRequired.toLowerCase()) hasTool = true; }); ca(hotbar); ca(inventory); if (!hasTool) { showNotification(`Требуется: ${recipe.toolRequired.toUpperCase()}`); return; } } let req = { ...recipe.ingredients }; let acc = {}; for (let key in req) acc[key] = 0; const ac = (arr) => { arr.forEach(s => { if (s) { let n = s.name.toLowerCase(); if (acc[n] !== undefined) acc[n] += s.count; } }); }; ac(hotbar); ac(inventory); for (let key in req) { if (acc[key] < req[key]) { showNotification(`Не хватает: ${req[key]}x ${key.toUpperCase()}`); return; } } const si = (arr) => { arr.forEach((s, idx) => { if (s) { let n = s.name.toLowerCase(); if (req[n] && req[n] > 0) { if (s.count > req[n]) { s.count -= req[n]; req[n] = 0; } else { req[n] -= s.count; arr[idx] = null; } } } }); }; si(hotbar); si(inventory); addItemToInventory(recipe.name, recipe.outputCount || 1); showNotification(`Создано: ${recipe.name}!`); updateCraftingCheck(); updateUiPanels(); }
+        function buildRecipeBook() { const c = document.getElementById('recipeBookGrid'); c.innerHTML = ''; RECIPES.forEach(r => { let rs = document.createElement('div'); rs.className = 'recipe-slot'; let it = TextureManager.get('items', r.name.toLowerCase().replace(/ /g, '_')); if (it) { rs.style.backgroundImage = `url('${it.src}')`; rs.classList.add('has-texture'); let te = document.createElement('span'); te.className = 'item-text'; te.innerText = r.name; rs.appendChild(te); } else { rs.innerText = r.name; } rs.addEventListener('click', () => executeAutoCraft(r)); c.appendChild(rs); }); }
+        function buildUiGrids() { const cs = (id, sz, tp) => { const t = document.getElementById(id); t.innerHTML = ''; for (let i = 0; i < sz; i++) { let s = document.createElement('div'); s.className = 'slot'; s.dataset.index = i; s.dataset.type = tp; s.addEventListener('mousedown', onSlotMouseDown); s.addEventListener('touchstart', onSlotTouchStart); s.addEventListener('contextmenu', e => e.preventDefault()); t.appendChild(s); } }; cs('inventoryGrid', 27, 'inventory'); cs('craftingGrid', 9, 'crafting'); cs('hotbarGrid', 9, 'hotbar'); let os = document.getElementById('craftOutputSlot'); os.dataset.type = 'output'; os.addEventListener('mousedown', onSlotMouseDown); os.addEventListener('touchstart', onSlotTouchStart); os.addEventListener('contextmenu', e => e.preventDefault()); document.querySelectorAll('[data-furnace]').forEach(s => { s.addEventListener('mousedown', onFurnaceSlotMouseDown); s.addEventListener('touchstart', onFurnaceSlotTouchStart); s.addEventListener('contextmenu', e => e.preventDefault()); }); document.querySelectorAll('[data-bfurnace]').forEach(s => { s.addEventListener('mousedown', onBrickFurnaceSlotMouseDown); s.addEventListener('touchstart', onBrickFurnaceSlotTouchStart); s.addEventListener('contextmenu', e => e.preventDefault()); }); document.querySelectorAll('[data-loom]').forEach(s => { s.addEventListener('mousedown', onLoomSlotMouseDown); s.addEventListener('touchstart', onLoomSlotTouchStart); s.addEventListener('contextmenu', e => e.preventDefault()); }); buildRecipeBook(); }
+        function updateUiPanels() { const sgs = (sel, ga) => { const sl = document.querySelectorAll(sel); sl.forEach((s, idx) => { s.innerHTML = ''; let i = ga[idx]; if (i) { let it = TextureManager.get('items', i.name.toLowerCase().replace(/ /g, '_')); if (it) { s.classList.add('has-texture'); s.style.backgroundImage = `url('${it.src}')`; let d = i.durability !== undefined ? ` [${i.durability}]` : ''; if(d) { let de = document.createElement('span'); de.className = 'item-text'; de.innerText = d; s.appendChild(de); } } else { s.classList.remove('has-texture'); s.style.backgroundImage = ''; let d = i.durability !== undefined ? ` [${i.durability}]` : ''; s.innerText = i.name.toUpperCase() + d; } let ce = document.createElement('span'); ce.className = 'count'; ce.innerText = i.count; s.appendChild(ce); } else { s.classList.remove('has-texture'); s.style.backgroundImage = ''; } if (sel.includes('hotbar')) { if (idx === activeHotbarIndex) { s.style.border = '2px solid #eab308'; s.style.boxShadow = '0 0 6px rgba(234,179,8,0.6)'; } else { s.style.border = '2px solid #555'; s.style.boxShadow = 'none'; } } }); }; sgs('#inventoryGrid .slot', inventory); sgs('#craftingGrid .slot', craftingGrid); sgs('#hotbarGrid .slot', hotbar); renderCraftOutputSlot(); updateFloatingCursorElement(); if (document.getElementById('scoreValue')) { document.getElementById('scoreValue').innerText = Math.floor(player.score); } }
+        function renderCraftOutputSlot() { const os = document.getElementById('craftOutputSlot'); os.innerHTML = ''; if (craftOutput) { let it = TextureManager.get('items', craftOutput.name.toLowerCase().replace(/ /g, '_')); if (it) { os.classList.add('has-texture'); os.style.backgroundImage = `url('${it.src}')`; } else { os.classList.remove('has-texture'); os.style.backgroundImage = ''; os.innerText = craftOutput.name; } let ce = document.createElement('span'); ce.className = 'count'; ce.innerText = craftOutput.count; os.appendChild(ce); } else { os.classList.remove('has-texture'); os.style.backgroundImage = ''; } }
+        function onSlotTouchStart(e) { e.preventDefault(); if (mobileModeEnabled && this.dataset.type === 'hotbar') { activeHotbarIndex = parseInt(this.dataset.index); updateUiPanels(); return; } onSlotMouseDown.call(this, { button: 0, preventDefault: () => {} }); }
+        function onFurnaceSlotTouchStart(e) { e.preventDefault(); onFurnaceSlotMouseDown.call(this, { button: 0, preventDefault: () => {} }); }
+        function onBrickFurnaceSlotTouchStart(e) { e.preventDefault(); onBrickFurnaceSlotMouseDown.call(this, { button: 0, preventDefault: () => {} }); }
+        function onLoomSlotTouchStart(e) { e.preventDefault(); onLoomSlotMouseDown.call(this, { button: 0, preventDefault: () => {} }); }
+        function onSlotMouseDown(e) { e.preventDefault(); let type = this.dataset.type; let idx = parseInt(this.dataset.index); if (type === 'output') { if (craftOutput) { let ci = { ...craftOutput }; let tn = ci.name.toLowerCase(); if (tn.includes('axe') || tn.includes('pickaxe') || tn.includes('shovel') || tn.includes('spear') || tn.includes('knife') || tn.includes('bow') || tn.includes('musket') || tn.includes('spindle')) { if (tn.includes('iron') || tn.includes('musket')) ci.durability = 100; else if (tn.includes('bronze')) ci.durability = 80; else if (tn.includes('copper')) ci.durability = 60; else ci.durability = 40; } if (heldItem == null) { heldItem = ci; consumeCraftingIngredients(); } else if (heldItem.name === ci.name && !heldItem.durability) { heldItem.count += ci.count; consumeCraftingIngredients(); } else if (heldItem.name === ci.name && heldItem.durability !== undefined) { showNotification("Нельзя держать несколько инструментов!"); } else { showNotification("Очистите курсор!"); } updateCraftingCheck(); updateUiPanels(); } return; } let grid = getGridArrayByType(type); let si = grid[idx]; if (e.button === 0) { if (heldItem == null) { if (si != null) { heldItem = si; grid[idx] = null; } } else { if (si == null) { grid[idx] = heldItem; heldItem = null; } else if (si.name === heldItem.name) { si.count += heldItem.count; heldItem = null; } else { let temp = si; grid[idx] = heldItem; heldItem = temp; } } } else if (e.button === 2) { if (heldItem == null) { if (si != null) { if (si.count === 1) { heldItem = si; grid[idx] = null; } else { heldItem = { name: si.name, count: 1 }; si.count--; } } } else { if (si == null) { grid[idx] = { name: heldItem.name, count: 1 }; heldItem.count--; if (heldItem.count <= 0) heldItem = null; } else if (si.name === heldItem.name) { si.count++; heldItem.count--; if (heldItem.count <= 0) heldItem = null; } else { let temp = si; grid[idx] = heldItem; heldItem = temp; } } } updateCraftingCheck(); updateUiPanels(); }
+        function onFurnaceSlotMouseDown(e) { e.preventDefault(); if (!currentFurnaceTile) return; let st = this.dataset.furnace; let ti = null; if (st === 'item') ti = currentFurnaceTile.itemSlot; if (st === 'fuel') ti = currentFurnaceTile.fuelSlot; if (st === 'result') ti = currentFurnaceTile.resultSlot; if (e.button === 0) { if (st === 'result') { if (ti) { if (heldItem == null) { heldItem = ti; currentFurnaceTile.resultSlot = null; } else if (heldItem.name === ti.name) { heldItem.count += ti.count; currentFurnaceTile.resultSlot = null; } } } else { if (heldItem && st === 'fuel' && !['coal', 'log'].includes(heldItem.name.toLowerCase())) { showNotification("Только УГОЛЬ или БРЕВНО!"); return; } if (heldItem == null) { if (ti) { heldItem = ti; if (st === 'item') currentFurnaceTile.itemSlot = null; if (st === 'fuel') currentFurnaceTile.fuelSlot = null; } } else { if (ti == null) { if (st === 'item') currentFurnaceTile.itemSlot = heldItem; if (st === 'fuel') currentFurnaceTile.fuelSlot = heldItem; heldItem = null; } else if (ti.name === heldItem.name) { ti.count += heldItem.count; heldItem = null; } else { let tmp = ti; if (st === 'item') currentFurnaceTile.itemSlot = heldItem; if (st === 'fuel') currentFurnaceTile.fuelSlot = heldItem; heldItem = tmp; } } } } updateFurnaceUi(); updateUiPanels(); }
+        function onBrickFurnaceSlotMouseDown(e) { e.preventDefault(); if (!currentBrickFurnaceTile) return; let st = this.dataset.bfurnace; let ti = null; let idx = -1; if (st.startsWith('item')) { idx = parseInt(st.replace('item','')); ti = currentBrickFurnaceTile.itemSlots[idx]; } else if (st.startsWith('result')) { idx = parseInt(st.replace('result','')); ti = currentBrickFurnaceTile.resultSlots[idx]; } else if (st === 'fuel') { ti = currentBrickFurnaceTile.fuelSlot; } if (e.button === 0) { if (heldItem && st === 'fuel' && !['coal', 'log'].includes(heldItem.name.toLowerCase())) { showNotification("Только УГОЛЬ или БРЕВНО!"); return; } if (heldItem != null && st.startsWith('result')) { return; } if (heldItem == null) { if (ti) { heldItem = ti; if (st.startsWith('item')) currentBrickFurnaceTile.itemSlots[idx] = null; if (st.startsWith('result')) currentBrickFurnaceTile.resultSlots[idx] = null; if (st === 'fuel') currentBrickFurnaceTile.fuelSlot = null; } } else { if (ti == null) { if (st.startsWith('item')) currentBrickFurnaceTile.itemSlots[idx] = heldItem; if (st === 'fuel') currentBrickFurnaceTile.fuelSlot = heldItem; heldItem = null; } else if (ti.name === heldItem.name) { ti.count += heldItem.count; heldItem = null; } else { let tmp = ti; if (st.startsWith('item')) currentBrickFurnaceTile.itemSlots[idx] = heldItem; if (st === 'fuel') currentBrickFurnaceTile.fuelSlot = heldItem; heldItem = tmp; } } } updateBrickFurnaceUi(); updateUiPanels(); }
+        function onLoomSlotMouseDown(e) { e.preventDefault(); if (!currentLoomTile) return; let st = this.dataset.loom; let ti = null; if (st === 'item') ti = currentLoomTile.itemSlot; else if (st === 'result') ti = currentLoomTile.resultSlot; if (e.button === 0) { if (st === 'result') { if (ti) { if (heldItem == null) { heldItem = ti; currentLoomTile.resultSlot = null; } else if (heldItem.name === ti.name) { heldItem.count += ti.count; currentLoomTile.resultSlot = null; } } } else if (st === 'item') { if (heldItem && heldItem.name.toLowerCase() !== 'yarn') { showNotification("Вставьте ПРЯЖУ!"); return; } if (heldItem == null) { if (ti) { heldItem = ti; currentLoomTile.itemSlot = null; } } else { if (ti == null) { currentLoomTile.itemSlot = heldItem; heldItem = null; } else if (ti.name === heldItem.name) { ti.count += heldItem.count; heldItem = null; } else { let tmp = ti; currentLoomTile.itemSlot = heldItem; heldItem = tmp; } } } } updateLoomUi(); updateUiPanels(); }
+        function updateFurnaceUi() { if (!currentFurnaceTile) return; const ie = document.getElementById('furnaceItemSlot'); const fe = document.getElementById('furnaceFuelSlot'); const re = document.getElementById('furnaceResultSlot'); const pe = document.getElementById('furnaceProgress'); const sync = (el, item, dt) => { el.innerHTML = ''; if (item) { let it = TextureManager.get('items', item.name.toLowerCase().replace(/ /g, '_')); if(it) { el.style.backgroundImage = `url('${it.src}')`; el.classList.add('has-texture'); } else { el.style.backgroundImage = ''; el.classList.remove('has-texture'); el.innerText = item.name.toUpperCase(); } let ce = document.createElement('span'); ce.className = 'count'; ce.innerText = item.count; el.appendChild(ce); } else { el.style.backgroundImage = ''; el.classList.remove('has-texture'); el.innerText = dt; } }; sync(ie, currentFurnaceTile.itemSlot, "Item"); sync(fe, currentFurnaceTile.fuelSlot, "Fuel"); sync(re, currentFurnaceTile.resultSlot, "Result"); pe.innerText = `${Math.floor(currentFurnaceTile.cookProgress)}%`; }
+        function updateBrickFurnaceUi() { if (!currentBrickFurnaceTile) return; for(let i=0; i<3; i++) { const ie = document.getElementById(`bfurnaceItem${i}`); const re = document.getElementById(`bfurnaceResult${i}`); const sync = (el, item, dt) => { el.innerHTML = ''; if (item) { let it = TextureManager.get('items', item.name.toLowerCase().replace(/ /g, '_')); if(it) { el.style.backgroundImage = `url('${it.src}')`; el.classList.add('has-texture'); } else { el.style.backgroundImage = ''; el.classList.remove('has-texture'); el.innerText = item.name.toUpperCase(); } let ce = document.createElement('span'); ce.className = 'count'; ce.innerText = item.count; el.appendChild(ce); } else { el.style.backgroundImage = ''; el.classList.remove('has-texture'); el.innerText = dt; } }; sync(ie, currentBrickFurnaceTile.itemSlots[i], `In ${i+1}`); sync(re, currentBrickFurnaceTile.resultSlots[i], `Out ${i+1}`); } const fe = document.getElementById('bfurnaceFuelSlot'); const pe = document.getElementById('bfurnaceProgress'); fe.innerHTML = ''; if(currentBrickFurnaceTile.fuelSlot) { let it = TextureManager.get('items', currentBrickFurnaceTile.fuelSlot.name.toLowerCase().replace(/ /g, '_')); if(it) { fe.style.backgroundImage = `url('${it.src}')`; fe.classList.add('has-texture'); fe.innerText = ''; } else { fe.style.backgroundImage = ''; fe.classList.remove('has-texture'); fe.innerText = currentBrickFurnaceTile.fuelSlot.name.toUpperCase(); } let c = document.createElement('span'); c.className='count'; c.innerText=currentBrickFurnaceTile.fuelSlot.count; fe.appendChild(c); } else { fe.style.backgroundImage = ''; fe.classList.remove('has-texture'); fe.innerText='Fuel'; } let tp = currentBrickFurnaceTile.cookProgress.reduce((a,b)=>a+b, 0)/3; pe.innerText = `${Math.floor(tp)}%`; }
+        function updateLoomUi() { if (!currentLoomTile) return; const ie = document.getElementById('loomItemSlot'); const re = document.getElementById('loomResultSlot'); const pb = document.getElementById('loomProgressBar'); const pt = document.getElementById('loomProgressText'); const sync = (el, item, dt) => { el.innerHTML = ''; if (item) { let it = TextureManager.get('items', item.name.toLowerCase().replace(/ /g, '_')); if(it) { el.style.backgroundImage = `url('${it.src}')`; el.classList.add('has-texture'); } else { el.style.backgroundImage = ''; el.classList.remove('has-texture'); el.innerText = item.name.toUpperCase(); } let ce = document.createElement('span'); ce.className = 'count'; ce.innerText = item.count; el.appendChild(ce); } else { el.style.backgroundImage = ''; el.classList.remove('has-texture'); el.innerText = dt; } }; sync(ie, currentLoomTile.itemSlot, "Пряжа"); sync(re, currentLoomTile.resultSlot, "Ткань"); pb.style.width = currentLoomTile.progress + '%'; pt.innerText = Math.floor(currentLoomTile.progress) + '%'; }
+        function consumeCraftingIngredients() { for (let i = 0; i < 9; i++) { if (craftingGrid[i]) { craftingGrid[i].count--; if (craftingGrid[i].count <= 0) craftingGrid[i] = null; } } }
+        function updateFloatingCursorElement() { const el = document.getElementById('floatingCursorItem'); if (heldItem) { el.innerText = `${heldItem.name.toUpperCase()} x${heldItem.count}`; el.style.display = 'block'; el.style.left = `${mouseScreenPos.x}px`; el.style.top = `${mouseScreenPos.y}px`; } else { el.style.display = 'none'; } }
+
+        // НОВОЕ: Подбор предметов через ЛКМ
+         function performLeftClick(mx, my) {
+            // 1. Проверка предметов на полу (ЛКМ для подбора)
+            for (let i = floorItems.length - 1; i >= 0; i--) {
+                let item = floorItems[i];
+                if ((item.dim || 'surface') !== player.currentDimension) continue;
+                let pDist = Math.hypot(player.x - item.x, player.y - item.y);
+                let mDist = Math.hypot(item.x - mx, item.y - my);
+                
+                if (pDist < player.collectRadius && mDist < 24) {
+                    if (isMultiplayerMode && socket) {
+                        socket.emit('pickup_item', item.id);
+                    } else {
+                        let collected = addItemToInventory(item.name, item.count);
+                        if (collected) {
+                            showNotification(`Подобрано: ${item.name.toUpperCase()} (x${item.count})`);
+                            floorItems.splice(i, 1);
+                        } else {
+                            showNotification("Инвентарь полон!");
+                        }
+                    }
+                    return; 
+                }
+            }
+
+            if (player.attackCooldown > 0) return; let weapon = getActiveWeapon();
+            if (weapon.name === 'BOW' || weapon.name === 'MUSKET') {
+                let an = weapon.name === 'BOW' ? 'arrow' : 'bullet'; let ha = false;
+                for(let i=0; i<hotbar.length; i++) { if(hotbar[i] && hotbar[i].name.toLowerCase() === an) { ha = true; hotbar[i].count--; if(hotbar[i].count <= 0) hotbar[i] = null; break; } }
+                if(!ha) { for(let i=0; i<inventory.length; i++) { if(inventory[i] && inventory[i].name.toLowerCase() === an) { ha = true; inventory[i].count--; if(inventory[i].count <= 0) inventory[i] = null; break; } } }
+                if (!ha) { showNotification(`Нет ${an === 'arrow' ? 'стрел' : 'пуль'}!`); return; }
+                player.attackCooldown = WEAPON_STATS[weapon.name].cooldown; let dx = mx - player.x; let dy = my - player.y; let dist = Math.hypot(dx, dy); if (dist === 0) return;
+                let sp = weapon.name === 'MUSKET' ? 2500 : 800; projectiles.push({ x: player.x, y: player.y, vx: (dx/dist) * sp, vy: (dy/dist) * sp, damage: WEAPON_STATS[weapon.name].damage, life: weapon.name === 'MUSKET' ? 0.8 : 2.0, dim: player.currentDimension, type: weapon.name === 'MUSKET' ? 'bullet' : 'arrow' });
+                if (weapon.slot) rollToolBreak({ slot: weapon.slot, grid: hotbar, index: activeHotbarIndex }); updateUiPanels(); return;
+            }
+            let ws = WEAPON_STATS[weapon.name] || WEAPON_STATS['BARE HANDS'];
+            
+            // PvP Проверка
+            if (isMultiplayerMode) {
+                for (let id in remotePlayers) {
+                    const rp = remotePlayers[id];
+                    if (rp.currentDimension !== player.currentDimension) continue;
+                    let dm = Math.hypot(rp.renderX - mx, rp.renderY - my);
+                    let dp = Math.hypot(rp.renderX - player.x, rp.renderY - player.y);
+                    if (dm < 25 && dp <= ws.range) {
+                        player.attackCooldown = ws.cooldown;
+                        if (weapon.slot) rollToolBreak({ slot: weapon.slot, grid: hotbar, index: activeHotbarIndex });
+                        socket.emit('damage_player', { targetId: id, damage: ws.damage });
+                        showNotification(`Попадание по игроку ${rp.nickname || ''}!`);
+                        return; 
+                    }
+                }
+            }
+
+            // ИСПРАВЛЕНО: Проверка удара по животным (корректный расчет дистанции)
+            for (let i = 0; i < animals.length; i++) { 
+                let a = animals[i]; 
+                let aX = a.renderX !== undefined ? a.renderX : a.x; 
+                let aY = a.renderY !== undefined ? a.renderY : a.y; 
+                let dm = Math.hypot(aX - mx, aY - my); 
+                let dp = Math.hypot(aX - player.x, aY - player.y); 
+                if (dm < (a.type === 'wolf' ? 40 : 30) && dp <= ws.range) { 
+                    player.attackCooldown = ws.cooldown; 
+                    if (weapon.slot) rollToolBreak({ slot: weapon.slot, grid: hotbar, index: activeHotbarIndex }); 
+                    if (isMultiplayerMode) { 
+                        socket.emit('damage_animal', { id: a.id, damage: ws.damage }); 
+                        showNotification(`Попадание по ${a.type.toUpperCase()}!`); 
+                    } else { 
+                        a.health -= ws.damage; 
+                        if (a.health <= 0) { 
+                            let drops = []; 
+                            if (a.type === 'pig') { drops.push({ name: 'hide', count: 1 }); drops.push({ name: 'meat', count: Math.floor(Math.random() * 3) + 1 }); if (Math.random() < 0.5) drops.push({ name: 'fat', count: 1 }); } 
+                            else if (a.type === 'sheep') { drops.push({ name: 'hide', count: 1 }); drops.push({ name: 'meat', count: Math.floor(Math.random() * 2) + 1 }); drops.push({ name: 'wool', count: 1 }); } 
+                            else if (a.type === 'deer') { drops.push({ name: 'hide', count: Math.floor(Math.random() * 2) + 1 }); drops.push({ name: 'meat', count: Math.floor(Math.random() * 3) + 2 }); drops.push({ name: 'sinew', count: 1 }); } 
+                            else if (a.type === 'wolf') { drops.push({ name: 'hide', count: 1 }); } 
+                            drops.forEach(d => spawnFloorItem(a.x, a.y, d.name, d.count)); player.score += 30; animals.splice(i, 1); showNotification(`Убито: ${a.type.toUpperCase()}!`); 
+                        } else { 
+                            showNotification(`Попадание по ${a.type.toUpperCase()}! (-${ws.damage} HP)`); a.fleeTime = 5; a.state = 'flee'; 
+                        } 
+                    } 
+                    return; 
+                } 
+            }
+            let tx = Math.floor(mx / TILE_SIZE); let ty = Math.floor(my / TILE_SIZE); let dx = mx - player.x; let dy = my - player.y; let dist = Math.sqrt(dx*dx + dy*dy); if (dist > TILE_SIZE * 2.5) { showNotification("Слишком далеко!"); return; } let key = getTileKey(tx, ty); let feature = worldModifications.get(key);
+            if (feature) {
+                if (feature.type === 'tree') { let tr = getActiveTool('AXE'); if (tr) { player.attackCooldown = 0.6; feature.health--; if (feature.health <= 0) { player.score += 15; worldModifications.set(key, null); if (!isMultiplayerMode) { let ld = Math.floor(Math.random() * 3) + 1; spawnFloorItem(tx*TILE_SIZE + 32, ty*TILE_SIZE + 32, 'log', ld); if (Math.random() < 0.25) spawnFloorItem(tx*TILE_SIZE + 16, ty*TILE_SIZE + 48, 'stick', 1); } } rollToolBreak(tr); updateUiPanels(); } else showNotification("Выберите ТОПОР!"); } 
+                else if (feature.type === 'stone' || feature.type === 'coal_ore' || feature.type === 'copper_ore' || feature.type === 'tin_ore' || feature.type === 'iron_ore' || feature.type === 'sulfur_ore') { let tr = getActiveTool('PICKAXE'); if (tr) { player.attackCooldown = 0.6; feature.health--; if (feature.health <= 0) { player.score += 15; worldModifications.set(key, null); if (!isMultiplayerMode) { let drop = 'rock'; if(feature.type === 'coal_ore') drop = 'coal'; else if(feature.type === 'copper_ore') drop = 'copper ore'; else if(feature.type === 'tin_ore') drop = 'tin ore'; else if(feature.type === 'iron_ore') drop = 'iron ore'; else if(feature.type === 'sulfur_ore') drop = 'sulfur'; spawnFloorItem(tx*TILE_SIZE + 32, ty*TILE_SIZE + 32, drop, feature.type === 'stone' ? 3 : 1); } } rollToolBreak(tr); updateUiPanels(); } else showNotification("Выберите КИРКУ!"); } 
+                else if (feature.type === 'placed_log' || feature.type === 'door' || feature.type === 'brick_wall' || feature.type === 'bed' || feature.type === 'loom') { let tr = getActiveTool('AXE'); if (tr) { player.attackCooldown = 0.6; feature.health--; if (feature.health <= 0) { worldModifications.set(key, null); if (!isMultiplayerMode) { if(feature.type === 'placed_log') spawnFloorItem(tx * TILE_SIZE + 32, ty * TILE_SIZE + 32, 'log', 1); else if(feature.type === 'door') spawnFloorItem(tx * TILE_SIZE + 32, ty * TILE_SIZE + 32, 'log', 2); else if(feature.type === 'bed') spawnFloorItem(tx * TILE_SIZE + 32, ty * TILE_SIZE + 32, 'bed', 1); else if(feature.type === 'loom') spawnFloorItem(tx * TILE_SIZE + 32, ty * TILE_SIZE + 32, 'loom', 1); else if(feature.type === 'brick_wall') spawnFloorItem(tx * TILE_SIZE + 32, ty * TILE_SIZE + 32, 'brick wall', 1); } } rollToolBreak(tr); updateUiPanels(); } else showNotification("Выберите ТОПОР!"); } 
+                else if (feature.type === 'bush') { player.attackCooldown = 0.4; feature.health--; if (feature.health <= 0) { player.score += 5; worldModifications.set(key, null); if (!isMultiplayerMode) { let sd = Math.floor(Math.random() * 3) + 1; spawnFloorItem(tx*TILE_SIZE + 32, ty*TILE_SIZE + 32, 'stick', sd); if (Math.random() < 0.20) spawnFloorItem(tx*TILE_SIZE + 32, ty*TILE_SIZE + 32, 'wildberries', 1); } } updateUiPanels(); } 
+                else if (feature.type === 'seaweed_plant') { player.attackCooldown = 0.4; feature.health--; if (feature.health <= 0) { player.score += 5; worldModifications.set(key, null); if (!isMultiplayerMode) spawnFloorItem(tx*TILE_SIZE + 32, ty*TILE_SIZE + 32, 'seaweed', 1); } updateUiPanels(); }
+            } else { 
+                let tr = getActiveTool('SHOVEL'); if (tr) { player.attackCooldown = 0.6; let bio = getBiomeAt(tx, ty); if (player.currentDimension === 'surface' && bio === BIOMES.BEACH_SAND) { if (!isMultiplayerMode) spawnFloorItem(mx, my, 'sand', 1); rollToolBreak(tr); } else if (player.currentDimension === 'surface' && bio === BIOMES.BEACH_CLAY) { if (!isMultiplayerMode) spawnFloorItem(mx, my, 'clay', 1); rollToolBreak(tr); } else if (player.currentDimension === 'surface' && bio !== BIOMES.SEA && bio !== BIOMES.RIVER && bio !== BIOMES.DESERT) { if (!isMultiplayerMode) spawnFloorItem(mx, my, 'mud', 1); rollToolBreak(tr); } else showNotification("Здесь нет грязи!"); }
+            }
+        }
+        function performRightClick(mx, my) {
+            // Передача предметов другому игроку
+            if (isMultiplayerMode) {
+                for (let id in remotePlayers) {
+                    const rp = remotePlayers[id];
+                    if (rp.currentDimension !== player.currentDimension) continue;
+                    let dm = Math.hypot(rp.renderX - mx, rp.renderY - my);
+                    let dp = Math.hypot(rp.renderX - player.x, rp.renderY - player.y);
+                    if (dm < 25 && dp <= TILE_SIZE * 3) {
+                        let activeItem = hotbar[activeHotbarIndex];
+                        if (activeItem) {
+                            let isTool = activeItem.name.toLowerCase().includes('axe') || activeItem.name.toLowerCase().includes('pickaxe') || activeItem.name.toLowerCase().includes('shovel') || activeItem.name.toLowerCase().includes('spear') || activeItem.name.toLowerCase().includes('knife') || activeItem.name.toLowerCase().includes('bow') || activeItem.name.toLowerCase().includes('musket') || activeItem.name.toLowerCase().includes('spindle');
+                            if (isTool) {
+                                socket.emit('give_item', { targetId: id, item: { name: activeItem.name, count: 1, durability: activeItem.durability } });
+                                hotbar[activeHotbarIndex] = null;
+                            } else {
+                                socket.emit('give_item', { targetId: id, item: { name: activeItem.name, count: 1 } });
+                                activeItem.count--;
+                                if (activeItem.count <= 0) hotbar[activeHotbarIndex] = null;
+                            }
+                            updateUiPanels();
+                            showNotification(`Предмет передан игроку ${rp.nickname || ''}`);
+                        }
+                        return; 
+                    }
+                }
+            }
+
+            let tx = Math.floor(mx / TILE_SIZE); let ty = Math.floor(my / TILE_SIZE); let key = getTileKey(tx, ty); let cb = getBiomeAt(tx, ty); let ef = worldModifications.get(key); 
+            if (ef && ef.type === 'bed') { player.spawnX = tx * TILE_SIZE + 32; player.spawnY = ty * TILE_SIZE + 32; showNotification("Точка возрождения установлена!"); updateUiPanels(); return; }
+            let ai = hotbar[activeHotbarIndex];
+            if (ai && ['log', 'primitive furnace', 'raft', 'door', 'brick wall', 'brick furnace', 'loom', 'bed'].includes(ai.name.toLowerCase())) {
+                if (player.currentDimension === 'cave') { showNotification("Слишком плотно!"); return; } let dx = mx - player.x; let dy = my - player.y; if (Math.sqrt(dx*dx + dy*dy) > TILE_SIZE * 3) { showNotification("Слишком далеко!"); return; } let nm = ai.name.toLowerCase();
+                if (nm === 'raft') { if (cb === BIOMES.SEA || cb === BIOMES.RIVER) { if (!player.onRaft) { player.onRaft = true; ai.count--; if (ai.count <= 0) hotbar[activeHotbarIndex] = null; updateUiPanels(); showNotification("Плот спущен!"); } else showNotification("Вы уже на плоту!"); return; } else showNotification("Плот нужен на воде!"); return; }
+                if (!ef) { 
+                    if (nm === 'log') worldModifications.set(key, { type: 'placed_log', health: 3 }); else if (nm === 'door') worldModifications.set(key, { type: 'door', health: 2 }); else if (nm === 'brick wall') worldModifications.set(key, { type: 'brick_wall', health: 5 }); else if (nm === 'primitive furnace') worldModifications.set(key, { type: 'furnace', cookProgress: 0, itemSlot: null, fuelSlot: null, resultSlot: null }); else if (nm === 'brick furnace') worldModifications.set(key, { type: 'brick_furnace', cookProgress: [0,0,0], itemSlots: [null,null,null], fuelSlot: null, resultSlots: [null,null,null] }); else if (nm === 'loom') worldModifications.set(key, { type: 'loom', itemSlot: null, resultSlot: null, progress: 0, health: 3 }); else if (nm === 'bed') worldModifications.set(key, { type: 'bed', health: 2 });
+                    ai.count--; if (ai.count <= 0) hotbar[activeHotbarIndex] = null; updateUiPanels(); showNotification(`Построено: ${nm.toUpperCase()}!`); return; 
+                } else { showNotification("Место занято!"); return; }
+            }
+            let ptx = Math.floor(player.x / TILE_SIZE); let pty = Math.floor(player.y / TILE_SIZE); let sb = getBiomeAt(ptx, pty); let iw = (player.currentDimension === 'surface' && sb.drinkable);
+            if (ai) { let nm = ai.name.toLowerCase(); if (nm === 'fired clay vessel' && iw) { ai.count--; if (ai.count <= 0) hotbar[activeHotbarIndex] = null; addItemToInventory('FIRED CLAY VESSEL WITH WATER', 1); updateUiPanels(); showNotification("Сосуд наполнен!"); return; } if (nm === 'fired clay vessel with water') { if (player.thirst < player.maxThirst) { player.thirst = Math.min(player.maxThirst, player.thirst + 50); showNotification("Вы выпили воду!"); ai.count--; if (ai.count <= 0) hotbar[activeHotbarIndex] = null; addItemToInventory('FIRED CLAY VESSEL', 1); updateUiPanels(); return; } else { showNotification("Вы не хотите пить!"); return; } } if (nm === 'bottle of juice') { if (player.thirst < player.maxThirst) { player.thirst = Math.min(player.maxThirst, player.thirst + 35); showNotification("Вы выпили сок!"); ai.count--; if (ai.count <= 0) hotbar[activeHotbarIndex] = null; addItemToInventory('BOTTLE', 1); updateUiPanels(); return; } else { showNotification("Вы не хотите пить!"); return; } } }
+            if (iw) { if (player.thirst < player.maxThirst) { player.thirst = Math.min(player.maxThirst, player.thirst + 35); showNotification("Вы напились!"); return; } }
+            if (ai && player.hunger < player.maxHunger) { let fn = ai.name.toLowerCase(); if (['apple', 'wildberries', 'carrot', 'meat', 'cooked meat', 'seaweed'].includes(fn)) { let dn = ai.name.toUpperCase(); ai.count--; if (ai.count <= 0) hotbar[activeHotbarIndex] = null; let hg = 25, hpg = 8; if (fn === 'wildberries') { hg = 15; hpg = 5; } if (fn === 'carrot') { hg = 20; hpg = 10; } if (fn === 'meat') { hg = 15; hpg = -10; } if (fn === 'cooked meat') { hg = 50; hpg = 20; } if (fn === 'seaweed') { hg = 10; hpg = 5; } player.hunger = Math.min(player.maxHunger, player.hunger + hg); player.health = Math.max(0, Math.min(player.maxHealth, player.health + hpg)); updateUiPanels(); showNotification(`Съедено: ${dn}!`); return; } }
+        }
+        function saveGame() { if (!currentSaveId) currentSaveId = 'save_' + Date.now(); const sd = { noiseSeed: NOISE_SEED, player: { ...player }, inventory: inventory.map(i => i ? { ...i } : null), hotbar: hotbar.map(i => i ? { ...i } : null), floorItems: floorItems.map(i => ({ ...i })), animals: animals.map(a => ({ ...a })), worldModifications: Array.from(worldModifications.entries()) }; try { localStorage.setItem('survivalSave_' + currentSaveId, JSON.stringify(sd)); let r = JSON.parse(localStorage.getItem('survivalSavesRegistry') || '[]'); const ei = r.findIndex(s => s.id === currentSaveId); const m = { id: currentSaveId, seed: NOISE_SEED, date: new Date().toLocaleString(), score: Math.floor(player.score) }; if (ei >= 0) r[ei] = m; else r.push(m); localStorage.setItem('survivalSavesRegistry', JSON.stringify(r)); showNotification('Игра сохранена!'); } catch (e) { showNotification("Ошибка!"); } }
+        function loadGame(sid) { const raw = localStorage.getItem('survivalSave_' + sid); if (!raw) return showNotification('Сохранение повреждено!'); const d = JSON.parse(raw); currentSaveId = sid; if (d.noiseSeed !== undefined) NOISE_SEED = d.noiseSeed; Object.assign(player, d.player); if (!player.spawnX) { player.spawnX = 32; player.spawnY = 32; } inventory = d.inventory.map(i => i ? { ...i } : null); hotbar = d.hotbar.map(i => i ? { ...i } : null); floorItems = d.floorItems.map(i => ({ ...i })); animals = d.animals.map(a => ({ ...a })); worldModifications = new Map(d.worldModifications); window.worldModifications = worldModifications; document.getElementById('starterMenu').style.display = 'none'; gameState = 'play'; mobileModeEnabled = document.getElementById('mobileModeCheckbox').checked; if (mobileModeEnabled) { document.body.classList.add('mobile-device'); document.getElementById('desktopControlsGuide').style.display = 'none'; } else { document.body.classList.remove('mobile-device'); document.getElementById('desktopControlsGuide').style.display = 'block'; } document.getElementById('mobileJoystickContainer').style.display = mobileModeEnabled ? 'block' : 'none'; document.getElementById('mobileActionContainer').style.display = mobileModeEnabled ? 'flex' : 'none'; showNotification('Игра загружена!'); }
+        function deleteSave(sid) { localStorage.removeItem('survivalSave_' + sid); let r = JSON.parse(localStorage.getItem('survivalSavesRegistry') || '[]'); r = r.filter(s => s.id !== sid); localStorage.setItem('survivalSavesRegistry', JSON.stringify(r)); updateSavesPanel(); }
+        function updateSavesPanel() { const c = document.getElementById('savesListContainer'); c.innerHTML = ''; const r = JSON.parse(localStorage.getItem('survivalSavesRegistry') || '[]'); if (r.length === 0) { c.innerHTML = '<div style="text-align:center; color:#888;">Нет сохранений</div>'; return; } r.sort((a,b) => new Date(b.date) - new Date(a.date)); r.forEach(s => { const d = document.createElement('div'); d.className = 'save-item'; const i = document.createElement('div'); i.className = 'save-info'; i.innerHTML = `<b>Сид:</b> ${s.seed}<br><b>Дата:</b> ${s.date}<br><b>Очки:</b> ${s.score || 0}`; const b = document.createElement('div'); b.className = 'save-actions'; const lb = document.createElement('button'); lb.className = 'save-btn load-btn'; lb.innerText = 'Играть'; lb.onclick = () => loadGame(s.id); const db = document.createElement('button'); db.className = 'save-btn delete-btn'; db.innerText = 'Удалить'; db.onclick = () => { if(confirm('Удалить?')) deleteSave(s.id); }; b.appendChild(lb); b.appendChild(db); d.appendChild(i); d.appendChild(b); c.appendChild(d); }); }
+        function returnToMainMenu() { saveGame(); gameState = 'menu'; document.getElementById('starterMenu').style.display = 'flex'; document.getElementById('menuPrimaryPanel').style.display = 'flex'; document.getElementById('menuMultiplayerPanel').style.display = 'none'; document.getElementById('menuSettingsPanel').style.display = 'none'; document.getElementById('menuSavesPanel').style.display = 'none'; document.getElementById('unifiedMenu').style.display = 'none'; document.getElementById('furnaceMenu').style.display = 'none'; document.getElementById('brickFurnaceMenu').style.display = 'none'; document.getElementById('loomMenu').style.display = 'none'; document.getElementById('devMenu').style.display = 'none'; document.body.classList.remove('mobile-device'); }
+        function toggleDevMenu() { const m = document.getElementById('devMenu'); if (m.style.display === 'flex') m.style.display = 'none'; else { m.style.display = 'flex'; setDevTab('res'); } }
+        function setDevTab(tab) { const c = document.getElementById('devMenuContent'); c.innerHTML = ''; document.querySelectorAll('.dev-tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab)); const cb = (n, tc, tn, oc) => { let b = document.createElement('button'); b.className = 'dev-item-btn'; let t = TextureManager.get(tc, tn); if (t) { b.classList.add('has-texture'); b.style.backgroundImage = `url('${t.src}')`; let te = document.createElement('span'); te.className = 'item-text'; te.innerText = n; b.appendChild(te); } else { b.innerText = n; } b.onclick = oc; c.appendChild(b); }; if (tab === 'res') { [...DEV_RESOURCES].sort((a, b) => a.localeCompare(b)).forEach(r => { let it = r.includes('axe') || r.includes('pickaxe') || r.includes('shovel') || r.includes('spear') || r.includes('knife') || r.includes('bow') || r.includes('musket') || r.includes('spindle'); cb(r.toUpperCase(), 'items', r.toLowerCase().replace(/ /g, '_'), () => { addItemToInventory(r.toUpperCase(), it ? 1 : 100); showNotification(`Добавлено: ${r.toUpperCase()}`); }); }); } else if (tab === 'obj') { [...DEV_OBJECTS].sort((a, b) => a.name.localeCompare(b.name)).forEach(o => { cb(o.name.toUpperCase(), 'objects', o.type, () => { let ptx = Math.floor(player.x / TILE_SIZE); let pty = Math.floor(player.y / TILE_SIZE); let key = getTileKey(ptx, pty); if (o.type === 'cave_entrance') { worldModifications.set(getTileKey(ptx, pty, 'surface'), { type: 'cave_entrance' }); worldModifications.set(getTileKey(ptx, pty, 'cave'), { type: 'cave_entrance' }); } else { worldModifications.set(key, { type: o.type, ...o.data }); } showNotification(`Заспавнено: ${o.name}`); }); }); } else if (tab === 'anm') { [...DEV_ANIMALS].sort((a, b) => a.localeCompare(b)).forEach(a => { cb(a.toUpperCase(), 'animals', a, () => { spawnAnimalGroup(Math.floor(player.x / TILE_SIZE), Math.floor(player.y / TILE_SIZE), a, 1); showNotification(`Заспавнено: ${a.toUpperCase()}`); }); }); } }
+        document.getElementById('closeDevMenuBtn').addEventListener('click', () => document.getElementById('devMenu').style.display = 'none');
+        document.querySelectorAll('.dev-tab-btn').forEach(b => b.addEventListener('click', () => setDevTab(b.dataset.tab)));
+        window.addEventListener('keydown', (e) => { if (gameState !== 'play') return; const c = e.code; if (['KeyW', 'KeyA', 'KeyS', 'KeyD'].includes(c)) inputs[c] = true; if (c.startsWith('Digit')) { let n = parseInt(c.replace('Digit', '')); if (n >= 1 && n <= 9) { activeHotbarIndex = n - 1; updateUiPanels(); } } if (c === 'KeyE' || c === 'KeyT') toggleInventoryMenu(); if (c === 'KeyR') triggerRaftDismountAction(); if (c === 'Backquote') { e.preventDefault(); toggleDevMenu(); } if (c === 'Escape') { if (document.getElementById('devMenu').style.display === 'flex') { document.getElementById('devMenu').style.display = 'none'; return; } returnToMainMenu(); } });
+        window.addEventListener('keyup', (e) => { const c = e.code; if (['KeyW', 'KeyA', 'KeyS', 'KeyD'].includes(c)) inputs[c] = false; });
+        window.addEventListener('mousemove', (e) => { if (gameState !== 'play') return; mouseScreenPos.x = e.clientX; mouseScreenPos.y = e.clientY; mouseWorldPos.x = e.clientX + camX; mouseWorldPos.y = e.clientY + camY; updateFloatingCursorElement(); });
+        function toggleInventoryMenu() { const m = document.getElementById('unifiedMenu'); m.style.display = m.style.display === 'block' ? 'none' : 'block'; updateUiPanels(); }
+        function triggerRaftDismountAction() { if (player.onRaft) { player.onRaft = false; addItemToInventory('RAFT', 1); showNotification("Плот сложен!"); } }
+        window.addEventListener('click', (e) => { if (gameState !== 'play') return; if (e.target !== canvas) return; if (document.getElementById('unifiedMenu').style.display === 'block' || document.getElementById('devMenu').style.display === 'flex') return; if (document.getElementById('scoreShopMenu').style.display === 'block') return; if (e.clientX < 280 && e.clientY < 240) return; if (e.clientY > window.innerHeight - 100) return; performLeftClick(e.clientX + camX, e.clientY + camY); });
+        window.addEventListener('contextmenu', (e) => { e.preventDefault(); if (gameState !== 'play') return; if (e.target !== canvas) return; if (document.getElementById('unifiedMenu').style.display === 'block' || document.getElementById('devMenu').style.display === 'flex') return; performRightClick(e.clientX + camX, e.clientY + camY); });
+        const jc = document.getElementById('mobileJoystickContainer'); const jk = document.getElementById('mobileJoystickKnob');
+        jc.addEventListener('touchstart', (e) => { if (!mobileModeEnabled || gameState !== 'play') return; e.preventDefault(); let t = e.changedTouches[0]; joystickTouchId = t.identifier; joystickActive = true; pjc(t.clientX, t.clientY); });
+        window.addEventListener('touchmove', (e) => { if (!mobileModeEnabled || !joystickActive) return; for (let i = 0; i < e.touches.length; i++) { if (e.touches[i].identifier === joystickTouchId) { pjc(e.touches[i].clientX, e.touches[i].clientY); break; } } });
+        window.addEventListener('touchend', (e) => { if (!mobileModeEnabled || !joystickActive) return; for (let i = 0; i < e.changedTouches.length; i++) { if (e.changedTouches[i].identifier === joystickTouchId) { joystickActive = false; joystickTouchId = null; joystickX = 0; joystickY = 0; jk.style.transform = `translate(0px, 0px)`; break; } } });
+        function pjc(cx, cy) { let r = jc.getBoundingClientRect(); let cxx = r.left + r.width / 2; let cyy = r.top + r.height / 2; let dx = cx - cxx; let dy = cy - cyy; let d = Math.hypot(dx, dy); let mr = r.width / 2; if (d > mr) { dx = (dx / d) * mr; dy = (dy / d) * mr; d = mr; } jk.style.transform = `translate(${dx}px, ${dy}px)`; joystickX = dx / mr; joystickY = dy / mr; }
+        document.getElementById('mobileActionE').addEventListener('touchstart', (e) => { e.preventDefault(); if (gameState === 'play') toggleInventoryMenu(); });
+        document.getElementById('mobileActionR').addEventListener('touchstart', (e) => { e.preventDefault(); if (gameState === 'play') triggerRaftDismountAction(); });
+        document.getElementById('mobileActionEsc').addEventListener('touchstart', (e) => { e.preventDefault(); if (gameState === 'play') returnToMainMenu(); });
+        document.getElementById('mobileActionDev').addEventListener('touchstart', (e) => { e.preventDefault(); if (gameState === 'play') toggleDevMenu(); });
+        let ctsX = 0; let ctsY = 0; let ltt = 0; let tto = null; let ltx = 0; let lty = 0;
+        canvas.addEventListener('touchstart', (e) => { if (!mobileModeEnabled || gameState !== 'play') return; if (e.target === jc || e.target === jk || e.target.closest('#mobileActionContainer')) return; let t = e.touches[0]; ctsX = t.clientX; ctsY = t.clientY; mouseScreenPos.x = t.clientX; mouseScreenPos.y = t.clientY; mouseWorldPos.x = t.clientX + camX; mouseWorldPos.y = t.clientY + camY; });
+        canvas.addEventListener('touchend', (e) => { if (!mobileModeEnabled || gameState !== 'play') return; if (e.target === jc || e.target === jk || e.target.closest('#mobileActionContainer')) return; if (document.getElementById('unifiedMenu').style.display === 'block' || document.getElementById('devMenu').style.display === 'flex') return; let t = e.changedTouches[0]; let cx = t.clientX; let cy = t.clientY; if (cx < 200 && cy < 140) return; if (cy > window.innerHeight - 80) return; if (Math.hypot(cx - ctsX, cy - ctsY) > 22) return; let now = performance.now(); let ts = now - ltt; if (ts < 300 && Math.hypot(cx - ltx, cy - lty) < 40) { clearTimeout(tto); tto = null; performRightClick(cx + camX, cy + camY); ltt = 0; } else { ltt = now; ltx = cx; lty = cy; clearTimeout(tto); tto = setTimeout(() => { performLeftClick(cx + camX, cy + camY); tto = null; }, 250); } });
+        document.getElementById('startBtn').addEventListener('click', () => { if (!isMultiplayerMode) { let sv = document.getElementById('seedInput').value.trim(); if (sv !== '') NOISE_SEED = stringToSeed(sv); else NOISE_SEED = Math.random() * 100000; } currentSaveId = null; worldModifications.clear(); floorItems = []; animals = []; projectiles = []; inventory = Array(27).fill(null); craftingGrid = Array(9).fill(null); hotbar = Array(9).fill(null); craftOutput = null; heldItem = null; player.x = 0; player.y = 0; player.speed = 5; player.angle = 0; player.health = 100; player.maxHealth = 100; player.hunger = 100; player.maxHunger = 100; player.thirst = 100; player.maxThirst = 100; player.onRaft = false; player.currentDimension = 'surface'; player.teleportCooldown = 0; player.score = 0; player.collectRadius = 90; player.radiusCost = 50; player.speedCost = 75; player.hpCost = 100; player.attackCooldown = 0; player.waterFillCooldown = 0; player.spawnX = 32; player.spawnY = 32; if (!isMultiplayerMode) { spawnFloorItem(40, 40, 'stick', 2); spawnFloorItem(-80, 60, 'rock', 2); spawnFloorItem(60, -40, 'apple', 2); } camX = 0; camY = 0; document.getElementById('starterMenu').style.display = 'none'; gameState = 'play'; mobileModeEnabled = document.getElementById('mobileModeCheckbox').checked; if (mobileModeEnabled) { document.body.classList.add('mobile-device'); document.getElementById('desktopControlsGuide').style.display = 'none'; } else { document.body.classList.remove('mobile-device'); document.getElementById('desktopControlsGuide').style.display = 'block'; } document.getElementById('mobileJoystickContainer').style.display = mobileModeEnabled ? 'block' : 'none'; document.getElementById('mobileActionContainer').style.display = mobileModeEnabled ? 'flex' : 'none'; });
+        document.getElementById('savesBtn').addEventListener('click', () => { document.getElementById('menuPrimaryPanel').style.display = 'none'; document.getElementById('menuSavesPanel').style.display = 'flex'; updateSavesPanel(); });
+        document.getElementById('savesBackBtn').addEventListener('click', () => { document.getElementById('menuSavesPanel').style.display = 'none'; document.getElementById('menuPrimaryPanel').style.display = 'flex'; });
+        document.getElementById('settingsBtn').addEventListener('click', () => { document.getElementById('menuPrimaryPanel').style.display = 'none'; document.getElementById('menuSettingsPanel').style.display = 'flex'; });
+        document.getElementById('settingsBackBtn').addEventListener('click', () => { document.getElementById('menuSettingsPanel').style.display = 'none'; document.getElementById('menuPrimaryPanel').style.display = 'flex'; });
+        document.getElementById('exitBtn').addEventListener('click', () => { if (confirm("Выйти?")) window.close(); });
+        function showNotification(msg) { const p = document.getElementById('interactionPrompt'); p.innerText = msg; p.style.display = 'block'; clearTimeout(p.timeout); p.timeout = setTimeout(() => { p.style.display = 'none'; }, 2500); }
+        window.showNotification = showNotification;
+        function isPlayerInWater() { if (player.currentDimension === 'cave') return false; let tx = Math.floor(player.x / TILE_SIZE); let ty = Math.floor(player.y / TILE_SIZE); const b = getBiomeAt(tx, ty); return b === BIOMES.SEA || b === BIOMES.RIVER; }
+        let lastTime = performance.now();
+        function gameLoop(now) { let dt = (now - lastTime) / 1000; lastTime = now; updateTick(dt); renderScene(); window.player = player; window.camX = camX; window.camY = camY; window.gameState = gameState; requestAnimationFrame(gameLoop); }
+        function spawnAnimalGroup(tx, ty, type, count) { for(let i=0; i<count; i++) { let mH = 50; if (type === 'sheep') mH = 40; if (type === 'deer') mH = 100; if (type === 'wolf') mH = 60; animals.push({ id: Math.random().toString(36).substr(2, 9), x: tx * TILE_SIZE + (Math.random() - 0.5) * TILE_SIZE * 2, y: ty * TILE_SIZE + (Math.random() - 0.5) * TILE_SIZE * 2, type, health: mH, maxHealth: mH, state: 'wander', targetX: 0, targetY: 0, wanderTime: 0, attackCooldown: 0, fleeTime: 0, dim: 'surface', renderX: tx * TILE_SIZE, renderY: ty * TILE_SIZE }); } }
+        function isTileBlockedForAnimal(x, y) { let tx = Math.floor(x / TILE_SIZE); let ty = Math.floor(y / TILE_SIZE); let f = worldModifications.get(getTileKey(tx, ty)); return f && (f.type === 'placed_log' || f.type === 'door' || f.type === 'brick_wall'); }
+        function getFurnaceOutput(i) { let r = i.toLowerCase(); if (r === 'mud') return 'BRICK'; if (r === 'sand') return 'GLASS'; if (r === 'clay vessel') return 'FIRED CLAY VESSEL'; if (r === 'copper ore') return 'COPPER INGOT'; if (r === 'tin ore') return 'TIN INGOT'; if (r === 'iron ore') return 'IRON INGOT'; if (r === 'meat') return 'COOKED MEAT'; return null; }
+        let llwt = 0;
+        document.getElementById('loomWorkBtn').addEventListener('click', () => { if (!currentLoomTile) return; let now = Date.now(); if (now - llwt < 1000) return; llwt = now; if (currentLoomTile.itemSlot && currentLoomTile.itemSlot.name.toLowerCase() === 'yarn') { if (currentLoomTile.resultSlot && (currentLoomTile.resultSlot.name.toLowerCase() !== 'cloth' || currentLoomTile.resultSlot.count >= 64)) { showNotification("Нет места!"); return; } currentLoomTile.progress += 10; if (currentLoomTile.progress >= 100) { currentLoomTile.progress = 0; currentLoomTile.itemSlot.count--; if (currentLoomTile.itemSlot.count <= 0) currentLoomTile.itemSlot = null; if (!currentLoomTile.resultSlot) currentLoomTile.resultSlot = { name: 'CLOTH', count: 1 }; else currentLoomTile.resultSlot.count++; showNotification("Соткана ткань!"); } updateLoomUi(); updateUiPanels(); } else { showNotification("Вставьте пряжу!"); } });
+
+               function updateTick(dt) {
+            if (gameState !== 'play') return; player.attackCooldown = Math.max(0, player.attackCooldown - dt); let mx = 0; let my = 0;
+            if (mobileModeEnabled && joystickActive) { mx = joystickX; my = joystickY; } else { if (inputs.KeyW) my -= 1; if (inputs.KeyS) my += 1; if (inputs.KeyA) mx -= 1; if (inputs.KeyD) mx += 1; if (mx !== 0 && my !== 0) { mx *= 0.7071; my *= 0.7071; } }
+            const hb = document.getElementById('hotbarContainer'); if (mobileModeEnabled) { if (my > 0.15) hb.classList.add('hotbar-hidden'); else if (my < -0.15 || Math.abs(mx) > 0.15 || (mx === 0 && my === 0)) hb.classList.remove('hotbar-hidden'); } else hb.classList.remove('hotbar-hidden');
+            let wt = isPlayerInWater(); let csm = 1.0; if (player.onRaft) csm = 2.0; else if (wt) csm = 0.5; let es = player.speed * csm;
+            let px = player.x + mx * es; let txX = Math.floor(px / TILE_SIZE); let tyX = Math.floor(player.y / TILE_SIZE); let fx = worldModifications.get(getTileKey(txX, tyX)); let cmx = true; if (fx && (fx.type === 'placed_log' || fx.type === 'brick_wall')) cmx = false; if (player.currentDimension === 'surface') { let bx = getBiomeAt(txX, tyX); if (player.onRaft && (bx !== BIOMES.SEA && bx !== BIOMES.RIVER)) cmx = false; } if (cmx) player.x = px;
+            let py = player.y + my * es; let txY = Math.floor(player.x / TILE_SIZE); let tyY = Math.floor(py / TILE_SIZE); let fy = worldModifications.get(getTileKey(txY, tyY)); let cmy = true; if (fy && (fy.type === 'placed_log' || fy.type === 'brick_wall')) cmy = false; if (player.currentDimension === 'surface') { let by = getBiomeAt(txY, tyY); if (player.onRaft && (by !== BIOMES.SEA && by !== BIOMES.RIVER)) cmy = false; } if (cmy) player.y = py;
+            if (mx !== 0 || my !== 0) player.angle = Math.atan2(my, mx);
+            let tcx = player.x - canvas.width / 2; let tcy = player.y - canvas.height / 2; if (mobileModeEnabled) { camX = tcx; camY = tcy; } else { camX += (tcx - camX) * 0.1; camY += (tcy - camY) * 0.1; }
+            
+            // Интерполяция (плавность) для сетевых игроков
+            for (let id in remotePlayers) {
+                const p = remotePlayers[id];
+                if (p.renderX === undefined) { p.renderX = p.x; p.renderY = p.y; }
+                p.renderX += (p.x - p.renderX) * Math.min(1, dt * 15);
+                p.renderY += (p.y - p.renderY) * Math.min(1, dt * 15);
+            }
+
+            // Интерполяция для животных (включая плавный поворот)
+            animals.forEach(a => {
+                if (a.renderX === undefined) { a.renderX = a.x; a.renderY = a.y; a.renderAngle = a.angle || 0; }
+                a.renderX += (a.x - a.renderX) * Math.min(1, dt * 15);
+                a.renderY += (a.y - a.renderY) * Math.min(1, dt * 15);
+                if (a.angle !== undefined) {
+                    if (a.renderAngle === undefined) a.renderAngle = a.angle;
+                    let diff = a.angle - a.renderAngle;
+                    while (diff > Math.PI) diff -= Math.PI * 2;
+                    while (diff < -Math.PI) diff += Math.PI * 2;
+                    a.renderAngle += diff * Math.min(1, dt * 15);
+                }
+            });
+
+            player.hunger = Math.max(0, player.hunger - dt * 0.268); player.thirst = Math.max(0, player.thirst - dt * 0.469); if (player.hunger <= 0 || player.thirst <= 0) player.health = Math.max(0, player.health - dt * 4.0); if (player.health > 0 && player.health < player.maxHealth && player.hunger >= 0.75 * player.maxHunger && player.thirst >= 0.75 * player.maxThirst) { player.health = Math.min(player.maxHealth, player.health + dt * 5.0); }
+            if (player.health <= 0) { player.health = player.maxHealth; player.hunger = player.maxHunger; player.thirst = player.maxThirst; player.x = player.spawnX; player.y = player.spawnY; player.currentDimension = 'surface'; player.onRaft = false; player.teleportCooldown = 2; animals.forEach(a => { a.state = 'wander'; a.fleeTime = 0; }); showNotification("ВЫ ПОГИБЛИ!"); return; }
+            document.getElementById('healthBar').style.width = `${(player.health / player.maxHealth) * 100}%`; document.getElementById('hungerBar').style.width = `${(player.hunger / player.maxHunger) * 100}%`; document.getElementById('thirstBar').style.width = `${(player.thirst / player.maxThirst) * 100}%`; if (player.teleportCooldown > 0) player.teleportCooldown = Math.max(0, player.teleportCooldown - dt);
+            if (player.waterFillCooldown > 0) player.waterFillCooldown -= dt;
+            if (wt && player.waterFillCooldown <= 0) { let ai = hotbar[activeHotbarIndex]; if (ai && ai.name.toLowerCase() === 'fired clay vessel') { ai.count--; if (ai.count <= 0) hotbar[activeHotbarIndex] = null; addItemToInventory('FIRED CLAY VESSEL WITH WATER', 1); updateUiPanels(); showNotification("Сосуд наполнен!"); player.waterFillCooldown = 1.0; } }
+            let ptx = Math.floor(player.x / TILE_SIZE); let pty = Math.floor(player.y / TILE_SIZE); generateTileFeatures(ptx, pty, getBiomeAt(ptx, pty)); let ctf = worldModifications.get(getTileKey(ptx, pty)); if (ctf && ctf.type === 'cave_entrance' && player.teleportCooldown === 0) { if (player.currentDimension === 'cave') { player.currentDimension = 'surface'; showNotification("Вы вышли на поверхность."); } else { if (player.onRaft) showNotification("Слезьте с плота!"); else { player.currentDimension = 'cave'; showNotification("Вы спустились в пещеру."); } } player.teleportCooldown = 1.5; }
+            
+            if (!isMultiplayerMode) {
+                if (Math.random() < 0.02 && animals.length < 25) { let sa = Math.random() * Math.PI * 2; let sd = 800 + Math.random() * 400; let sx = player.x + Math.cos(sa) * sd; let sy = player.y + Math.sin(sa) * sd; let stx = Math.floor(sx / TILE_SIZE); let sty = Math.floor(sy / TILE_SIZE); let bio = getBiomeAt(stx, sty); if (bio !== BIOMES.SEA && bio !== BIOMES.RIVER) { let rand = Math.random(); let gs = Math.floor(Math.random() * 5) + 1; if (bio === BIOMES.FOREST || bio === BIOMES.TAIGA) { if (rand < 0.3) spawnAnimalGroup(stx, sty, 'wolf', Math.random() > 0.5 ? gs : 1); else if (rand < 0.6) spawnAnimalGroup(stx, sty, 'deer', gs); else spawnAnimalGroup(stx, sty, 'pig', gs); } else if (bio === BIOMES.PLAIN) { if (rand < 0.2) spawnAnimalGroup(stx, sty, 'wolf', gs); else if (rand < 0.5) spawnAnimalGroup(stx, sty, 'sheep', gs); else spawnAnimalGroup(stx, sty, 'pig', gs); } else if (bio === BIOMES.STEPPE) { if (rand < 0.2) spawnAnimalGroup(stx, sty, 'wolf', gs); else if (rand < 0.6) spawnAnimalGroup(stx, sty, 'sheep', gs); else spawnAnimalGroup(stx, sty, 'deer', gs); } } }
+                
+                // ИСПРАВЛЕНО: Добавлен расчет угла поворота (a.angle) для одиночной игры
+                for (let i = animals.length - 1; i >= 0; i--) { 
+                    let a = animals[i]; if ((a.dim || 'surface') !== player.currentDimension) continue; 
+                    let dx = player.x - a.x; let dy = player.y - a.y; let dist = Math.hypot(dx, dy); 
+                    if (dist > 1500) { animals.splice(i, 1); continue; } if (dist < 0.1) dist = 0.1; 
+                    a.attackCooldown = Math.max(0, a.attackCooldown - dt); a.fleeTime = Math.max(0, a.fleeTime - dt); 
+                    if (a.type === 'wolf') { if (dist < 250) a.state = 'chase'; else if (dist > 400) a.state = 'wander'; } 
+                    else { if (a.fleeTime > 0) a.state = 'flee'; else a.state = 'wander'; } 
+                    if (a.state === 'chase') { 
+                        let nx = dx / dist; let ny = dy / dist; let nX = a.x + nx * 65 * dt; let nY = a.y + ny * 65 * dt; 
+                        if (!isTileBlockedForAnimal(nX, a.y)) a.x = nX; if (!isTileBlockedForAnimal(a.x, nY)) a.y = nY; 
+                        a.angle = Math.atan2(ny, nx); 
+                        if (dist < 45 && a.attackCooldown === 0) { player.health -= 20; a.attackCooldown = 1.5; showNotification("Волк укусил вас! (-20 HP)"); } 
+                    } else if (a.state === 'flee') { 
+                        let nx = -dx / dist; let ny = -dy / dist; let nX = a.x + nx * 80 * dt; let nY = a.y + ny * 80 * dt; 
+                        if (!isTileBlockedForAnimal(nX, a.y)) a.x = nX; if (!isTileBlockedForAnimal(a.x, nY)) a.y = nY; 
+                        a.angle = Math.atan2(ny, nx); 
+                    } else if (a.state === 'wander') { 
+                        a.wanderTime -= dt; 
+                        if (a.wanderTime <= 0) { a.wanderTime = 2 + Math.random() * 3; a.targetX = a.x + (Math.random() - 0.5) * 200; a.targetY = a.y + (Math.random() - 0.5) * 200; } 
+                        let wdx = a.targetX - a.x; let wdy = a.targetY - a.y; let wd = Math.hypot(wdx, wdy); 
+                        if (wd > 5) { 
+                            let sp = a.type === 'deer' ? 40 : 25; let nx = wdx / wd; let ny = wdy / wd; 
+                            let nX = a.x + nx * sp * dt; let nY = a.y + ny * sp * dt; 
+                            if (!isTileBlockedForAnimal(nX, a.y)) a.x = nX; else a.targetX = a.x; 
+                            if (!isTileBlockedForAnimal(a.x, nY)) a.y = nY; else a.targetY = a.y; 
+                            a.angle = Math.atan2(ny, nx); 
+                        } 
+                    } 
+                }
+            }
+
+            for (let i = projectiles.length - 1; i >= 0; i--) { let p = projectiles[i]; if ((p.dim || 'surface') !== player.currentDimension) continue; p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt; let hit = false; for(let j = animals.length - 1; j >= 0; j--) { let a = animals[j]; if ((a.dim || 'surface') !== p.dim) continue; if(Math.hypot(a.x - p.x, a.y - p.y) < 20) { if (isMultiplayerMode) { socket.emit('damage_animal', { id: a.id, damage: p.damage }); showNotification(`Попадание в ${a.type.toUpperCase()}!`); } else { a.health -= p.damage; if (a.health <= 0) { let drops = []; if (a.type === 'pig') { drops.push({ name: 'hide', count: 1 }); drops.push({ name: 'meat', count: Math.floor(Math.random() * 3) + 1 }); if (Math.random() < 0.5) drops.push({ name: 'fat', count: 1 }); } else if (a.type === 'sheep') { drops.push({ name: 'hide', count: 1 }); drops.push({ name: 'meat', count: Math.floor(Math.random() * 2) + 1 }); drops.push({ name: 'wool', count: 1 }); } else if (a.type === 'deer') { drops.push({ name: 'hide', count: Math.floor(Math.random() * 2) + 1 }); drops.push({ name: 'meat', count: Math.floor(Math.random() * 3) + 2 }); drops.push({ name: 'sinew', count: 1 }); } else if (a.type === 'wolf') { drops.push({ name: 'hide', count: 1 }); } drops.forEach(d => spawnFloorItem(a.x, a.y, d.name, d.count)); player.score += 30; animals.splice(j, 1); showNotification(`Убито: ${a.type.toUpperCase()}!`); } else { showNotification(`Попадание в ${a.type.toUpperCase()}!`); a.fleeTime = 5; a.state = 'flee'; } } hit = true; break; } }
+            if(!hit) { let tx = Math.floor(p.x / TILE_SIZE); let ty = Math.floor(p.y / TILE_SIZE); let feat = worldModifications.get(getTileKey(tx, ty, p.dim)); if (feat && ['tree', 'stone', 'placed_log', 'door', 'brick_wall', 'furnace', 'brick_furnace', 'copper_ore', 'tin_ore', 'iron_ore', 'sulfur_ore', 'coal_ore'].includes(feat.type)) hit = true; } if (hit || p.life <= 0) projectiles.splice(i, 1); }
+            
+            let fp = document.getElementById('furnaceMenu'); let bfp = document.getElementById('brickFurnaceMenu'); let lp = document.getElementById('loomMenu');
+            let ff = false; let fbf = false; let fl = false; let pTx = Math.floor(player.x / TILE_SIZE); let pTy = Math.floor(player.y / TILE_SIZE);
+            for (let [ks, ft] of worldModifications.entries()) {
+                if (ft && ft.type === 'furnace') { if (ft.itemSlot && ft.fuelSlot && ['coal', 'log'].includes(ft.fuelSlot.name.toLowerCase())) { let so = getFurnaceOutput(ft.itemSlot.name); if (so && (!ft.resultSlot || (ft.resultSlot.name === so && ft.resultSlot.count < 64))) { ft.cookProgress += dt * 25; if (ft.cookProgress >= 100) { ft.cookProgress = 0; ft.itemSlot.count--; if (ft.itemSlot.count <= 0) ft.itemSlot = null; ft.fuelSlot.count--; if (ft.fuelSlot.count <= 0) ft.fuelSlot = null; if (!ft.resultSlot) ft.resultSlot = { name: so, count: 1 }; else ft.resultSlot.count++; } } } else ft.cookProgress = Math.max(0, ft.cookProgress - dt * 40); let parts = ks.split('_'); let fD = parts[0]; let [fX, fY] = parts[1].split(',').map(Number); if (fD === player.currentDimension && fX === pTx && fY === pTy) { currentFurnaceTile = ft; ff = true; } }
+                else if (ft && ft.type === 'brick_furnace') { let hf = ft.fuelSlot && ['coal', 'log'].includes(ft.fuelSlot.name.toLowerCase()); let ip = false; for(let i=0; i<3; i++) { if (ft.itemSlots[i] && hf) { let so = getFurnaceOutput(ft.itemSlots[i].name); if (so && (!ft.resultSlots[i] || (ft.resultSlots[i].name === so && ft.resultSlots[i].count < 64))) { ft.cookProgress[i] += dt * 75; ip = true; if (ft.cookProgress[i] >= 100) { ft.cookProgress[i] = 0; ft.itemSlots[i].count--; if (ft.itemSlots[i].count <= 0) ft.itemSlots[i] = null; ft.fuelSlot.count--; if (ft.fuelSlot.count <= 0) ft.fuelSlot = null; hf = ft.fuelSlot && ft.fuelSlot.count > 0; if (!ft.resultSlots[i]) ft.resultSlots[i] = { name: so, count: 1 }; else ft.resultSlots[i].count++; } } } } if (!ip) { for(let i=0; i<3; i++) ft.cookProgress[i] = Math.max(0, ft.cookProgress[i] - dt * 40); } let parts = ks.split('_'); let fD = parts[0]; let [fX, fY] = parts[1].split(',').map(Number); if (fD === player.currentDimension && fX === pTx && fY === pTy) { currentBrickFurnaceTile = ft; fbf = true; } }
+                else if (ft && ft.type === 'loom') { let parts = ks.split('_'); let fD = parts[0]; let [fX, fY] = parts[1].split(',').map(Number); if (fD === player.currentDimension && fX === pTx && fY === pTy) { currentLoomTile = ft; fl = true; } }
+            }
+            if (ff) { fp.style.display = 'block'; updateFurnaceUi(); } else { fp.style.display = 'none'; currentFurnaceTile = null; } if (fbf) { bfp.style.display = 'block'; updateBrickFurnaceUi(); } else { bfp.style.display = 'none'; currentBrickFurnaceTile = null; } if (fl) { lp.style.display = 'block'; updateLoomUi(); } else { lp.style.display = 'none'; currentLoomTile = null; }
+
+            let pt = ""; let sp = false; 
+            for (let i = floorItems.length - 1; i >= 0; i--) {
+                let item = floorItems[i];
+                if ((item.dim || 'surface') !== player.currentDimension) continue;
+                let pd = Math.hypot(player.x - item.x, player.y - item.y);
+                let md = Math.hypot(mouseWorldPos.x - item.x, mouseWorldPos.y - item.y);
+                if (pd < player.collectRadius && md < 24) {
+                    pt = `ЛКМ: Подобрать [${item.name.toUpperCase()}]`;
+                    sp = true;
+                }
+            }
+            const pE = document.getElementById('interactionPrompt');
+            if (sp && document.getElementById('unifiedMenu').style.display !== 'block' && document.getElementById('devMenu').style.display !== 'flex') {
+                if (!pE.timeout) { 
+                    pE.innerText = pt;
+                    pE.style.display = 'block';
+                }
+            } else {
+                if (pE.innerText.startsWith('ЛКМ:') && !pE.timeout) pE.style.display = 'none';
+            }
+        }
+
+        function getItemFallbackColor(name) { let key = name.toLowerCase(); const colors = { 'stick': '#b45309', 'rock': '#9ca3af', 'apple': '#dc2626', 'wildberries': '#8b5cf6', 'carrot': '#f97316', 'log': '#d97706', 'mud': '#78350f', 'coal': '#111827', 'brick': '#b91c1c', 'copper ore': '#ea580c', 'tin ore': '#cbd5e1', 'iron ore': '#9a3412', 'sulfur ore': '#eab308', 'sulfur': '#fde047', 'copper ingot': '#f97316', 'tin ingot': '#e2e8f0', 'iron ingot': '#6b7280', 'bronze ingot': '#cd7f32', 'meat': '#dc2626', 'cooked meat': '#7f1d1d', 'hide': '#92400e', 'fat': '#fbbf24', 'wool': '#f3f4f6', 'sinew': '#d1d5db', 'seaweed': '#0e7490', 'door': '#8b5a2b', 'brick wall': '#991b1b', 'brick furnace': '#7f1d1d', 'gunpowder': '#1f2937', 'bullet': '#fbbf24', 'musket': '#374151', 'sand': '#fde047', 'clay': '#a16207', 'clay vessel': '#ca8a04', 'fired clay vessel': '#b45309', 'fired clay vessel with water': '#3b82f6', 'glass': '#e2e8f0', 'bottle': '#cbd5e1', 'bottle of juice': '#f97316', 'spindle': '#92400e', 'yarn': '#e2e8f0', 'cloth': '#d1d5db', 'loom': '#78350f', 'bed': '#dc2626' }; for (let k in colors) { if (key.includes(k)) return colors[k]; } return '#fff'; }
+        function drawFeatureHealthBar(cx, cy, f) { if (!f || f.health === undefined) return; const m = { 'tree': 3, 'stone': 4, 'coal_ore': 3, 'copper_ore': 4, 'tin_ore': 3, 'iron_ore': 5, 'sulfur_ore': 3, 'placed_log': 3, 'bush': 2, 'seaweed_plant': 1, 'door': 2, 'brick_wall': 5, 'loom': 3, 'bed': 2 }; const mH = m[f.type]; if (!mH) return; if (f.health < mH) { let bw = 40; let bh = 5; let x = cx - bw / 2; let y = cy - 30; ctx.fillStyle = 'rgba(0,0,0,0.7)'; ctx.fillRect(x, y, bw, bh); let hp = Math.max(0, f.health / mH); ctx.fillStyle = hp > 0.5 ? '#22c55e' : (hp > 0.25 ? '#eab308' : '#ef4444'); ctx.fillRect(x, y, bw * hp, bh); ctx.strokeStyle = '#000'; ctx.lineWidth = 1; ctx.strokeRect(x, y, bw, bh); } }
+
+        function renderScene() {
+            if (gameState !== 'play') return; ctx.clearRect(0, 0, canvas.width, canvas.height); ctx.save();
+            if (mobileModeEnabled) { ctx.translate(canvas.width / 2, canvas.height / 2); ctx.scale(1.2, 1.2); ctx.translate(-canvas.width / 2, -canvas.height / 2); } ctx.translate(-camX, -camY);
+            let sc = Math.floor(camX / TILE_SIZE) - 1; let ec = Math.ceil((camX + canvas.width) / TILE_SIZE) + 1; let sr = Math.floor(camY / TILE_SIZE) - 1; let er = Math.ceil((camY + canvas.height) / TILE_SIZE) + 1;
+            for (let r = sr; r <= er; r++) { for (let c = sc; c <= ec; c++) { 
+                if (player.currentDimension === 'cave') { let ct = TextureManager.get('tiles', 'cave'); if (ct) ctx.drawImage(ct, c * TILE_SIZE, r * TILE_SIZE, TILE_SIZE, TILE_SIZE); else { ctx.fillStyle = '#2e2e33'; ctx.fillRect(c * TILE_SIZE, r * TILE_SIZE, TILE_SIZE, TILE_SIZE); } } 
+                else { let b = getBiomeAt(c, r); let bk = Object.keys(BIOMES).find(k => BIOMES[k] === b); let tt = TextureManager.get('tiles', bk.toLowerCase()); if (tt) ctx.drawImage(tt, c * TILE_SIZE, r * TILE_SIZE, TILE_SIZE, TILE_SIZE); else { ctx.fillStyle = b.color; ctx.fillRect(c * TILE_SIZE, r * TILE_SIZE, TILE_SIZE, TILE_SIZE); } }
+                ctx.strokeStyle = 'rgba(0,0,0,0.03)'; ctx.strokeRect(c * TILE_SIZE, r * TILE_SIZE, TILE_SIZE, TILE_SIZE); 
+                let f = generateTileFeatures(c, r, getBiomeAt(c, r)); let cx = c * TILE_SIZE + TILE_SIZE / 2; let cy = r * TILE_SIZE + TILE_SIZE / 2; 
+                if (f) { 
+                    let ot = TextureManager.get('objects', f.type);
+                    if (ot) ctx.drawImage(ot, c * TILE_SIZE, r * TILE_SIZE, TILE_SIZE, TILE_SIZE); 
+                    else {
+                        if (f.type === 'cave_entrance') { ctx.fillStyle = '#4b5563'; ctx.beginPath(); ctx.arc(cx, cy, 22, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = '#111827'; ctx.beginPath(); ctx.arc(cx, cy, 16, 0, Math.PI * 2); ctx.fill(); } 
+                        else if (f.type === 'tree') { ctx.fillStyle = '#78350f'; ctx.fillRect(cx - 6, cy + 4, 12, 16); ctx.fillStyle = '#064e3b'; ctx.beginPath(); ctx.arc(cx, cy - 4, 18, 0, Math.PI * 2); ctx.fill(); } 
+                        else if (f.type === 'stone') { ctx.fillStyle = '#6b7280'; ctx.beginPath(); ctx.arc(cx, cy + 4, 14, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = '#4b5563'; ctx.beginPath(); ctx.arc(cx - 4, cy, 8, 0, Math.PI * 2); ctx.fill(); } 
+                        else if (f.type === 'coal_ore') { ctx.fillStyle = '#374151'; ctx.beginPath(); ctx.arc(cx, cy + 4, 14, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = '#111827'; ctx.beginPath(); ctx.arc(cx - 4, cy + 1, 6, 0, Math.PI * 2); ctx.fill(); ctx.beginPath(); ctx.arc(cx + 3, cy + 6, 5, 0, Math.PI * 2); ctx.fill(); } 
+                        else if (f.type === 'copper_ore') { ctx.fillStyle = '#4b5563'; ctx.beginPath(); ctx.arc(cx, cy + 4, 14, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = '#ea580c'; ctx.beginPath(); ctx.arc(cx - 4, cy + 1, 5, 0, Math.PI * 2); ctx.fill(); ctx.beginPath(); ctx.arc(cx + 4, cy + 5, 4, 0, Math.PI * 2); ctx.fill(); } 
+                        else if (f.type === 'tin_ore') { ctx.fillStyle = '#4b5563'; ctx.beginPath(); ctx.arc(cx, cy + 4, 14, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = '#cbd5e1'; ctx.beginPath(); ctx.arc(cx - 3, cy + 2, 5, 0, Math.PI * 2); ctx.fill(); ctx.beginPath(); ctx.arc(cx + 3, cy - 2, 4, 0, Math.PI * 2); ctx.fill(); } 
+                        else if (f.type === 'iron_ore') { ctx.fillStyle = '#374151'; ctx.beginPath(); ctx.arc(cx, cy + 4, 14, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = '#b45309'; ctx.beginPath(); ctx.arc(cx - 2, cy - 1, 6, 0, Math.PI * 2); ctx.fill(); ctx.beginPath(); ctx.arc(cx + 4, cy + 4, 4, 0, Math.PI * 2); ctx.fill(); } 
+                        else if (f.type === 'sulfur_ore') { ctx.fillStyle = '#374151'; ctx.beginPath(); ctx.arc(cx, cy + 4, 14, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = '#fde047'; ctx.beginPath(); ctx.arc(cx - 4, cy, 5, 0, Math.PI * 2); ctx.fill(); ctx.beginPath(); ctx.arc(cx + 3, cy + 5, 4, 0, Math.PI * 2); ctx.fill(); } 
+                        else if (f.type === 'placed_log') { ctx.fillStyle = '#b45309'; ctx.fillRect(c * TILE_SIZE + 4, r * TILE_SIZE + 4, TILE_SIZE - 8, TILE_SIZE - 8); ctx.strokeStyle = '#451a03'; ctx.lineWidth = 3; ctx.strokeRect(c * TILE_SIZE + 4, r * TILE_SIZE + 4, TILE_SIZE - 8, TILE_SIZE - 8); } 
+                        else if (f.type === 'brick_wall') { ctx.fillStyle = '#991b1b'; ctx.fillRect(c * TILE_SIZE + 2, r * TILE_SIZE + 2, TILE_SIZE - 4, TILE_SIZE - 4); ctx.strokeStyle = '#7f1d1d'; ctx.lineWidth = 2; for(let i=0; i<TILE_SIZE; i+=16) { ctx.beginPath(); ctx.moveTo(c*TILE_SIZE+2, r*TILE_SIZE+i); ctx.lineTo(c*TILE_SIZE+TILE_SIZE-2, r*TILE_SIZE+i); ctx.stroke(); } } 
+                        else if (f.type === 'door') { ctx.fillStyle = '#8b5a2b'; ctx.fillRect(c * TILE_SIZE + 8, r * TILE_SIZE + 2, 48, 60); ctx.strokeStyle = '#5d3a1a'; ctx.lineWidth = 3; ctx.strokeRect(c * TILE_SIZE + 8, r * TILE_SIZE + 2, 48, 60); ctx.fillStyle = '#fbbf24'; ctx.beginPath(); ctx.arc(c * TILE_SIZE + 48, r * TILE_SIZE + 32, 3, 0, Math.PI * 2); ctx.fill(); } 
+                        else if (f.type === 'furnace') { ctx.fillStyle = '#4b5563'; ctx.fillRect(c * TILE_SIZE + 6, r * TILE_SIZE + 6, TILE_SIZE - 12, TILE_SIZE - 12); ctx.fillStyle = f.cookProgress > 0 ? '#f97316' : '#1f2937'; ctx.beginPath(); ctx.arc(cx, cy, 12, 0, Math.PI * 2); ctx.fill(); } 
+                        else if (f.type === 'brick_furnace') { ctx.fillStyle = '#7f1d1d'; ctx.fillRect(c * TILE_SIZE + 4, r * TILE_SIZE + 4, TILE_SIZE - 8, TILE_SIZE - 8); ctx.fillStyle = '#991b1b'; ctx.fillRect(c * TILE_SIZE + 10, r * TILE_SIZE + 10, TILE_SIZE - 20, TILE_SIZE - 20); let p = (f.cookProgress[0]+f.cookProgress[1]+f.cookProgress[2])/3; ctx.fillStyle = p > 0 ? '#dc2626' : '#450a0a'; ctx.beginPath(); ctx.arc(cx, cy, 8, 0, Math.PI * 2); ctx.fill(); } 
+                        else if (f.type === 'loom') { ctx.fillStyle = '#78350f'; ctx.fillRect(c * TILE_SIZE + 4, r * TILE_SIZE + 4, TILE_SIZE - 8, TILE_SIZE - 8); ctx.strokeStyle = '#44403c'; ctx.lineWidth = 2; ctx.strokeRect(c * TILE_SIZE + 4, r * TILE_SIZE + 4, TILE_SIZE - 8, TILE_SIZE - 8); ctx.fillStyle = '#a16207'; ctx.fillRect(c * TILE_SIZE + 10, r * TILE_SIZE + 20, 44, 6); ctx.fillRect(c * TILE_SIZE + 10, r * TILE_SIZE + 38, 44, 6); ctx.strokeStyle = '#f3f4f6'; ctx.lineWidth = 1; for(let i=0; i<4; i++) { ctx.beginPath(); ctx.moveTo(c * TILE_SIZE + 16 + (i*10), r * TILE_SIZE + 26); ctx.lineTo(c * TILE_SIZE + 16 + (i*10), r * TILE_SIZE + 38); ctx.stroke(); } } 
+                        else if (f.type === 'bed') { ctx.fillStyle = '#78350f'; ctx.fillRect(c * TILE_SIZE + 4, r * TILE_SIZE + 4, TILE_SIZE - 8, TILE_SIZE - 8); ctx.fillStyle = '#f3f4f6'; ctx.fillRect(c * TILE_SIZE + 8, r * TILE_SIZE + 8, 20, 16); ctx.fillStyle = '#ef4444'; ctx.fillRect(c * TILE_SIZE + 8, r * TILE_SIZE + 28, 48, 24); ctx.strokeStyle = '#b91c1c'; ctx.lineWidth = 2; ctx.strokeRect(c * TILE_SIZE + 8, r * TILE_SIZE + 28, 48, 24); } 
+                        else if (f.type === 'bush') { ctx.fillStyle = '#2e7d32'; ctx.beginPath(); ctx.arc(cx, cy + 5, 16, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = '#4caf50'; ctx.beginPath(); ctx.arc(cx - 5, cy - 2, 10, 0, Math.PI * 2); ctx.fill(); ctx.beginPath(); ctx.arc(cx + 5, cy + 2, 10, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = '#9c27b0'; ctx.beginPath(); ctx.arc(cx - 2, cy, 2, 0, Math.PI * 2); ctx.fill(); ctx.beginPath(); ctx.arc(cx + 4, cy + 4, 2, 0, Math.PI * 2); ctx.fill(); } 
+                        else if (f.type === 'seaweed_plant') { ctx.strokeStyle = '#0e7490'; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(cx, cy + 20); ctx.quadraticCurveTo(cx - 10, cy, cx, cy - 20); ctx.stroke(); ctx.beginPath(); ctx.moveTo(cx + 8, cy + 20); ctx.quadraticCurveTo(cx - 2, cy, cx + 8, cy - 15); ctx.stroke(); }
+                    }
+                } drawFeatureHealthBar(cx, cy, f); } }
+            
+            floorItems.forEach(item => { if ((item.dim || 'surface') !== player.currentDimension) return; let ik = item.name.toLowerCase().replace(/ /g, '_'); let it = TextureManager.get('items', ik); if (it) ctx.drawImage(it, item.x - 16, item.y - 16, 32, 32); else { ctx.fillStyle = getItemFallbackColor(item.name); ctx.beginPath(); ctx.arc(item.x, item.y, 8, 0, Math.PI * 2); ctx.fill(); ctx.strokeStyle = '#000'; ctx.stroke(); ctx.fillStyle = '#fff'; ctx.font = '10px sans-serif'; ctx.textAlign = 'center'; ctx.fillText(item.name.toUpperCase(), item.x, item.y - 12); } });
+            
+            // НОВОЕ: Отрисовка животных с масштабированием и поворотом
+            animals.forEach(a => {
+                if ((a.dim || 'surface') !== player.currentDimension) return;
+                let rX = a.renderX !== undefined ? a.renderX : a.x;
+                let rY = a.renderY !== undefined ? a.renderY : a.y;
+                
+                // Масштаб: 1.5 для мирных, 2 для волков
+                let scale = a.type === 'wolf' ? 2 : 1.5;
+                let radius = 16 * scale; // Базовый радиус для полоски здоровья и текста
+
+                ctx.save();
+                ctx.translate(rX, rY);
+                if (a.angle !== undefined) ctx.rotate(a.angle);
+                
+                let at = TextureManager.get('animals', a.type);
+                if (at) {
+                    let dw = at.width * scale;
+                    let dh = at.height * scale;
+                    ctx.drawImage(at, -dw / 2, -dh / 2, dw, dh);
+                } else {
+                    let sz = 16 * scale;
+                    let cl = '#a3a3a3';
+                    if (a.type === 'sheep') cl = '#f3f4f6';
+                    if (a.type === 'deer') cl = '#92400e';
+                    if (a.type === 'wolf') cl = '#4b5563';
+                    ctx.fillStyle = cl;
+                    ctx.beginPath();
+                    ctx.arc(0, 0, sz, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.strokeStyle = '#000';
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
+                }
+                ctx.restore();
+
+                // Полоса здоровья и имя (рисуются без поворота)
+                if (a.health < a.maxHealth) {
+                    ctx.fillStyle = 'red'; ctx.fillRect(rX - 18, rY - radius - 12, 36, 5);
+                    ctx.fillStyle = 'lime'; ctx.fillRect(rX - 18, rY - radius - 12, 36 * (a.health / a.maxHealth), 5);
+                }
+                ctx.fillStyle = '#fff'; ctx.font = 'bold 10px sans-serif'; ctx.textAlign = 'center';
+                ctx.fillText(a.type.toUpperCase(), rX, rY - radius - 16);
+            });
+
+            projectiles.forEach(p => { if (p.type === 'bullet') { ctx.fillStyle = '#fbbf24'; ctx.beginPath(); ctx.arc(p.x, p.y, 4, 0, Math.PI * 2); ctx.fill(); ctx.strokeStyle = '#b45309'; ctx.lineWidth = 1.5; ctx.stroke(); } else { ctx.strokeStyle = '#92400e'; ctx.lineWidth = 3; ctx.beginPath(); let a = Math.atan2(p.vy, p.vx); ctx.moveTo(p.x, p.y); ctx.lineTo(p.x - Math.cos(a) * 15, p.y - Math.sin(a) * 15); ctx.stroke(); } });
+            if (player.onRaft) { ctx.save(); ctx.translate(player.x, player.y); ctx.rotate(player.angle); ctx.fillStyle = '#d97706'; ctx.fillRect(-24, -24, 48, 48); ctx.strokeStyle = '#78350f'; ctx.lineWidth = 3; ctx.strokeRect(-24, -24, 48, 48); for (let o = -12; o <= 12; o += 12) { ctx.beginPath(); ctx.moveTo(o, -24); ctx.lineTo(o, 24); ctx.stroke(); } ctx.restore(); }
+            ctx.save(); ctx.translate(player.x, player.y); ctx.rotate(player.angle);
+            if (playerTexture.complete && playerTexture.naturalHeight !== 0) { ctx.drawImage(playerTexture, -24, -24, 48, 48); }
+            else { ctx.fillStyle = '#eab308'; ctx.beginPath(); ctx.arc(0, 0, 16, 0, Math.PI * 2); ctx.fill(); ctx.strokeStyle = '#000'; ctx.lineWidth = 2; ctx.stroke(); }
+            ctx.restore(); 
+            ctx.restore(); 
+        }
+
+        function updateShopButtons() { document.getElementById('buyRadiusBtn').innerText = `+Radius (Cost: ${player.radiusCost}) | Current: ${player.collectRadius}`; document.getElementById('buySpeedBtn').innerText = `+Speed (Cost: ${player.speedCost}) | Current: ${player.speed.toFixed(1)}`; document.getElementById('buyHpBtn').innerText = `+Max HP (Cost: ${player.hpCost}) | Current: ${player.maxHealth}`; }
+        document.getElementById('scoreContainer').addEventListener('click', (e) => { e.stopPropagation(); const s = document.getElementById('scoreShopMenu'); if (s.style.display === 'none' || s.style.display === '') { s.style.display = 'block'; updateShopButtons(); } else s.style.display = 'none'; });
+        document.getElementById('closeShopBtn').addEventListener('click', () => document.getElementById('scoreShopMenu').style.display = 'none');
+        document.getElementById('buyRadiusBtn').addEventListener('click', () => { if (player.score >= player.radiusCost) { player.score -= player.radiusCost; player.collectRadius += 20; player.radiusCost = Math.floor(player.radiusCost * 1.5); updateShopButtons(); updateUiPanels(); showNotification("Радиус улучшен!"); } else showNotification("Недостаточно очков!"); });
+        document.getElementById('buySpeedBtn').addEventListener('click', () => { if (player.score >= player.speedCost) { player.score -= player.speedCost; player.speed += 0.5; player.speedCost = Math.floor(player.speedCost * 1.5); updateShopButtons(); updateUiPanels(); showNotification("Скорость улучшена!"); } else showNotification("Недостаточно очков!"); });
+        document.getElementById('buyHpBtn').addEventListener('click', () => { if (player.score >= player.hpCost) { player.score -= player.hpCost; player.maxHealth += 20; player.health += 20; player.hpCost = Math.floor(player.hpCost * 1.5); updateShopButtons(); updateUiPanels(); showNotification("Макс. HP улучшен!"); } else showNotification("Недостаточно очков!"); });
+        document.getElementById('saveBtn').addEventListener('click', saveGame);
+        buildUiGrids(); updateUiPanels(); requestAnimationFrame(gameLoop);
+    </script>
+        <script>
+        // Регистрация Service Worker для PWA
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('./sw.js')
+                    .then(registration => {
+                        console.log('ServiceWorker зарегистрирован успешно: ', registration.scope);
+                    })
+                    .catch(error => {
+                        console.log('Ошибка регистрации ServiceWorker: ', error);
+                    });
+            });
+        }
+    </script>
+</body>
+</html>
