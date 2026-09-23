@@ -146,6 +146,10 @@ body, html { overflow: hidden; background-color: #1a1a1a; font-family: 'Segoe UI
 <input type="checkbox" id="mobileModeCheckbox" style="transform: scale(1.3); cursor: pointer;">
 <span style="font-size: 14px; font-weight: 500;">Включить мобильный режим</span>
 </label>
+<label style="display: flex; align-items: center; gap: 12px; cursor: pointer; padding: 6px 0;">
+<input type="checkbox" id="soundEnabledCheckbox" checked style="transform: scale(1.3); cursor: pointer;">
+<span style="font-size: 14px; font-weight: 500;">Звук включен</span>
+</label>
 <button id="settingsBackBtn" class="menu-btn back-btn">Назад в меню</button>
 </div>
 </div>
@@ -221,7 +225,7 @@ body, html { overflow: hidden; background-color: #1a1a1a; font-family: 'Segoe UI
 <div>
 <div class="panel-title">Player Storage Cargo</div>
 <div id="inventoryGrid" class="grid"></div>
-<p id="desktopControlsGuide" style="font-size: 11px; color: #aaa; margin-top: 12px; line-height: 1.5;">Templates & Controls:<br>⌨️ <b>1 - 9 Keys:</b> Select active hotbar element action.<br>⌨️ <b>R Key:</b> Dismount / Pack up current Raft vehicle.<br>⌨️ <b>ESC Key:</b> Save game and return to Main Menu.<br>⌨️ <b>~ Key:</b> Open Developer Menu.<br>🖱️ <b>Left Click Slots:</b> Select / Place full stack.<br>🖱️ <b>Right Click Slots:</b> Select 1 item / Drop 1 item from stack.<br>🏗️ <b>Right Click on World Tiles:</b> Place block elements or Deploy Raft / Set Spawn Bed.<br>📱 <b>Mobile Taps:</b> Single tap maps to LMB (Harvest). Double tap maps to RMB (Place / Drink / Eat).</p>
+<p id="desktopControlsGuide" style="font-size: 11px; color: #aaa; margin-top: 12px; line-height: 1.5;">Templates & Controls:<br>⌨️ <b>1 - 9 Keys:</b> Select active hotbar element action.<br>🖱️ <b>Mouse Wheel:</b> Switch active hotbar slot.<br>⌨️ <b>R Key:</b> Dismount / Pack up current Raft vehicle.<br>⌨️ <b>ESC Key:</b> Save game and return to Main Menu.<br>⌨️ <b>~ Key:</b> Open Developer Menu.<br>🖱️ <b>Left Click Slots:</b> Select / Place full stack.<br>🖱️ <b>Right Click Slots:</b> Select 1 item / Drop 1 item from stack.<br>🏗️ <b>Right Click on World Tiles:</b> Place block elements or Deploy Raft / Set Spawn Bed.<br>📱 <b>Mobile Taps:</b> Single tap maps to LMB (Harvest). Double tap maps to RMB (Place / Drink / Eat).</p>
 </div>
 <div>
 <div class="panel-title">3x3 Assembly Workbench</div>
@@ -237,7 +241,81 @@ body, html { overflow: hidden; background-color: #1a1a1a; font-family: 'Segoe UI
 <div id="hotbarContainer"><div class="hotbar-label">Hotbar</div><div id="hotbarGrid" class="grid"></div></div>
 <div id="interactionPrompt">Notification System</div>
 <script>
+// ============================================================
+// 0. АУДИО-СИСТЕМА (задел под папку sounds/)
+// Положите файлы в папку sounds/ рядом с index.html.
+// Отсутствующие файлы молча пропускаются — игра работает без них.
+// ============================================================
+const SoundManager = {
+basePath: 'sounds/',
+enabled: localStorage.getItem('soundEnabled') !== '0',
+masterVolume: 0.8,
+ctx: null,
+buffers: {},
+failed: {},
+lastPlayed: {},
+// Ожидаемые файлы (ключ -> имя файла в sounds/):
+FILES: {
+click: 'click.mp3',              // UI клики
+switch: 'switch.mp3',            // переключение слота хотбара
+pickup: 'pickup.mp3',            // подбор предмета
+craft: 'craft.mp3',              // крафт
+place: 'place.mp3',              // постройка/установка
+dig: 'dig.mp3',                  // копание лопатой
+eat: 'eat.mp3',                  // еда
+drink: 'drink.mp3',              // питье / наполнение сосуда
+error: 'error.mp3',              // отказ/ошибка действия
+break_tool: 'break_tool.mp3',    // поломка инструмента
+hit: 'hit.mp3',                  // удар по существу/игроку
+tree_hit: 'tree_hit.mp3',        // удар по дереву
+tree_break: 'tree_break.mp3',    // дерево сломано
+stone_hit: 'stone_hit.mp3',      // удар по камню/руде
+stone_break: 'stone_break.mp3',  // камень/руда сломаны
+bush_hit: 'bush_hit.mp3',        // куст/водоросли
+animal_death: 'animal_death.mp3',// смерть животного
+hurt: 'hurt.mp3',                // урон игроку
+death: 'death.mp3',              // смерть игрока
+bow: 'bow.mp3',                  // выстрел из лука
+musket: 'musket.mp3',            // выстрел из мушкета
+teleport: 'teleport.mp3'         // вход/выход из пещеры
+},
+unlock: function() {
+if (!this.enabled) return;
+if (!this.ctx) {
+try { this.ctx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { return; }
+this._loadAll();
+}
+if (this.ctx.state === 'suspended') this.ctx.resume();
+},
+_loadAll: function() {
+for (const name in this.FILES) {
+fetch(this.basePath + this.FILES[name])
+.then(r => { if (!r.ok) throw new Error(r.status); return r.arrayBuffer(); })
+.then(ab => this.ctx.decodeAudioData(ab))
+.then(buf => { this.buffers[name] = buf; })
+.catch(() => { this.failed[name] = true; });
+}
+},
+play: function(name, opts = {}) {
+if (!this.enabled || !this.ctx || !this.buffers[name]) return;
+const now = performance.now();
+if (this.lastPlayed[name] && now - this.lastPlayed[name] < (opts.minGap || 40)) return;
+this.lastPlayed[name] = now;
+const src = this.ctx.createBufferSource();
+src.buffer = this.buffers[name];
+src.playbackRate.value = opts.pitch || 1;
+const g = this.ctx.createGain();
+g.gain.value = (opts.volume !== undefined ? opts.volume : 1) * this.masterVolume;
+src.connect(g); g.connect(this.ctx.destination);
+src.start();
+},
+setEnabled: function(v) { this.enabled = v; localStorage.setItem('soundEnabled', v ? '1' : '0'); if (v) this.unlock(); }
+};
+['pointerdown', 'keydown', 'touchstart'].forEach(ev => window.addEventListener(ev, () => SoundManager.unlock(), { passive: true }));
+
+// ============================================================
 // 1. ВСТРОЕННЫЙ СЕТЕВОЙ МОДУЛЬ
+// ============================================================
 let socket = null; let isMultiplayerMode = false; let serverIp = "localhost:3000"; let remotePlayers = {}; let isIncomingSync = false; let playerNickname = "Survivor";
 function initNetworkMenu() {
 const startBtn = document.getElementById("startBtn"); if (!startBtn) return;
@@ -258,32 +336,42 @@ socket = io(`http://${serverIp}`);
 socket.on('connect', () => { isMultiplayerMode = true; });
 socket.on('init_world', (data) => {
 isIncomingSync = true;
-if (window.worldModifications && data.worldModifications) { window.worldModifications.clear(); for (let key in data.worldModifications) { window.worldModifications.set(key, data.worldModifications[key]); } }
+if (window.worldModifications && data.worldModifications) {
+window.worldModifications.clear(); machineKeys.clear();
+for (let key in data.worldModifications) { window.worldModifications.set(key, data.worldModifications[key]); registerMachine(key, data.worldModifications[key]); }
+}
 remotePlayers = data.players; delete remotePlayers[socket.id];
 if (data.seed !== undefined) NOISE_SEED = data.seed;
 if (data.floorItems) floorItems = data.floorItems;
 if (data.animals) animals = data.animals;
 isIncomingSync = false; launchGameViaNativeEngine();
 });
-socket.on('player_joined', (playerData) => { playerData.renderX = playerData.x; playerData.renderY = playerData.y; remotePlayers[playerData.id] = playerData; showNotification(`${playerData.nickname || 'Игрок'} подключился.`); });
+socket.on('player_joined', (playerData) => { playerData.renderX = playerData.x; playerData.renderY = playerData.y; playerData.remoteSwingTimer = 0; remotePlayers[playerData.id] = playerData; showNotification(`${playerData.nickname || 'Игрок'} подключился.`); });
 socket.on('player_updated', (playerData) => {
-if (remotePlayers[playerData.id]) {
-let rX = remotePlayers[playerData.id].renderX; let rY = remotePlayers[playerData.id].renderY;
-remotePlayers[playerData.id] = playerData;
-remotePlayers[playerData.id].renderX = rX; remotePlayers[playerData.id].renderY = rY;
+const existing = remotePlayers[playerData.id];
+if (existing) {
+playerData.renderX = existing.renderX; playerData.renderY = existing.renderY;
+playerData.remoteSwingTimer = existing.remoteSwingTimer || 0;
+// Анимация взмаха удалённого игрока: изменение счётчика swing -> запуск анимации
+if (playerData.swing !== undefined && existing.lastSwingSeq !== undefined && playerData.swing !== existing.lastSwingSeq) playerData.remoteSwingTimer = SWING_DURATION;
+} else {
+playerData.renderX = playerData.x; playerData.renderY = playerData.y;
+playerData.remoteSwingTimer = 0;
 }
+if (playerData.swing !== undefined) playerData.lastSwingSeq = playerData.swing;
+remotePlayers[playerData.id] = playerData;
 });
 socket.on('player_left', (id) => { showNotification(`Игрок покинул мир.`); delete remotePlayers[id]; });
 socket.on('player_damaged', (data) => {
-if (data.id === socket.id) { player.health = data.health; showNotification("Вам нанесли урон!"); }
+if (data.id === socket.id) { player.health = data.health; SoundManager.play('hurt'); showNotification("Вам нанесли урон!"); }
 else if (remotePlayers[data.id]) { remotePlayers[data.id].health = data.health; }
 });
 socket.on('receive_item', (data) => {
 let added = addItemToInventory(data.item.name, data.item.count, data.item.durability);
-if (added) showNotification(`Получен предмет: ${data.item.name.toUpperCase()} от игрока`);
+if (added) { SoundManager.play('pickup'); showNotification(`Получен предмет: ${data.item.name.toUpperCase()} от игрока`); }
 else showNotification(`Инвентарь полон! Предмет потерян.`);
 });
-socket.on('tile_modified', (data) => { isIncomingSync = true; if (window.worldModifications) { window.worldModifications.set(data.key, data.value); } isIncomingSync = false; });
+socket.on('tile_modified', (data) => { isIncomingSync = true; if (window.worldModifications) { window.worldModifications.set(data.key, data.value); registerMachine(data.key, data.value); } isIncomingSync = false; });
 socket.on('item_spawned', (item) => { floorItems.push(item); });
 socket.on('item_picked_up', (data) => {
 const idx = floorItems.findIndex(i => i.id === data.id);
@@ -291,8 +379,8 @@ let removedItem = null;
 if (idx !== -1) { removedItem = floorItems[idx]; floorItems.splice(idx, 1); }
 if (data.playerId === socket.id) {
 addItemToInventory(data.item.name, data.item.count);
+SoundManager.play('pickup');
 showNotification(`Подобрано: ${data.item.name.toUpperCase()} (x${data.item.count})`);
-// НОВОЕ: анимация подбора предмета (летит к игроку)
 if (removedItem) startPickupAnim(data.item.name, removedItem.x, removedItem.y);
 }
 });
@@ -300,29 +388,18 @@ socket.on('animals_sync', (data) => {
 let updatedAnimals = [];
 data.forEach(serverA => {
 let existing = animals.find(a => a.id === serverA.id);
-if (existing) { serverA.renderX = existing.renderX; serverA.renderY = existing.renderY; }
+if (existing) { serverA.renderX = existing.renderX; serverA.renderY = existing.renderY; serverA.renderAngle = existing.renderAngle; }
 else { serverA.renderX = serverA.x; serverA.renderY = serverA.y; }
 updatedAnimals.push(serverA);
 });
 animals = updatedAnimals;
 });
 socket.on('animal_killed', (data) => { const idx = animals.findIndex(a => a.id === data.id); if (idx !== -1) animals.splice(idx, 1); });
-socket.on('animal_attack', (data) => { if (data.playerId === socket.id) { player.health -= 20; showNotification("Волк укусил вас! (-20 HP)"); } });
+socket.on('animal_attack', (data) => { if (data.playerId === socket.id) { player.health -= 20; SoundManager.play('hurt'); showNotification("Волк укусил вас! (-20 HP)"); } });
 }
 function launchGameViaNativeEngine() { const mp = document.getElementById("menuMultiplayerPanel"); if (mp) mp.style.display = "none"; const sb = document.getElementById("startBtn"); if (sb) sb.click(); showNotification("Успешное подключение к серверу!"); }
-setTimeout(() => {
-if (window.worldModifications) {
-const oSet = window.worldModifications.set; window.worldModifications.set = function(k, v) { const r = oSet.call(window.worldModifications, k, v); if (isMultiplayerMode && !isIncomingSync && socket) socket.emit('tile_modify', { key: k, value: v }); return r; };
-const oDel = window.worldModifications.delete; window.worldModifications.delete = function(k) { const r = oDel.call(window.worldModifications, k); if (isMultiplayerMode && !isIncomingSync && socket) socket.emit('tile_modify', { key: k, value: null }); return r; };
-}
-}, 1000);
-setInterval(() => { if (isMultiplayerMode && socket && window.player) { socket.emit('player_update', { x: window.player.x, y: window.player.y, angle: window.player.angle, health: window.player.health, hunger: window.player.hunger, thirst: window.player.thirst, score: window.player.score, currentDimension: window.player.currentDimension || 'surface', onRaft: window.player.onRaft || false, nickname: playerNickname, activeItem: (hotbar[activeHotbarIndex] ? hotbar[activeHotbarIndex].name : null) }); } }, 50);
-const oRAF = window.requestAnimationFrame;
-window.requestAnimationFrame = function(callback) {
-let cC = callback;
-if (callback && callback.name === 'gameLoop') { cC = function(ts) { callback(ts); if (isMultiplayerMode && window.gameState === 'play') renderRemotePlayers(); }; }
-return oRAF(cC);
-};
+// Сетевая синхронизация состояния игрока (включая счётчик взмаха)
+setInterval(() => { if (isMultiplayerMode && socket && window.player) { socket.emit('player_update', { x: window.player.x, y: window.player.y, angle: window.player.angle, health: window.player.health, hunger: window.player.hunger, thirst: window.player.thirst, score: window.player.score, currentDimension: window.player.currentDimension || 'surface', onRaft: window.player.onRaft || false, nickname: playerNickname, activeItem: (hotbar[activeHotbarIndex] ? hotbar[activeHotbarIndex].name : null), swing: swingSeq }); } }, 50);
 function renderRemotePlayers() {
 if (!window.ctx || !window.player) return; const ctx = window.ctx; const cd = window.player.currentDimension || 'surface';
 for (let id in remotePlayers) {
@@ -333,15 +410,26 @@ if (sX < -60 || sX > window.canvas.width + 60 || sY < -60 || sY > window.canvas.
 ctx.save(); ctx.translate(sX, sY); if (p.onRaft) { ctx.fillStyle = '#78350f'; ctx.fillRect(-24, -16, 48, 32); ctx.strokeStyle = '#451a03'; ctx.lineWidth = 2; ctx.strokeRect(-24, -16, 48, 32); } ctx.rotate(p.angle);
 if (playerTexture.complete && playerTexture.naturalHeight !== 0) { ctx.drawImage(playerTexture, -24, -24, 48, 48); }
 else { ctx.fillStyle = '#8b5cf6'; ctx.beginPath(); ctx.arc(0, 0, 20, 0, Math.PI * 2); ctx.fill(); ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2; ctx.stroke(); }
-// НОВОЕ: предмет в руке удалённого игрока
-if (p.activeItem) { let it = TextureManager.get('items', p.activeItem.toLowerCase().replace(/ /g, '_')); ctx.save(); ctx.translate(20, 16); ctx.rotate(0.35); if (it) ctx.drawImage(it, -13, -13, 26, 26); else { ctx.fillStyle = getItemFallbackColor(p.activeItem); ctx.beginPath(); ctx.arc(0, 0, 9, 0, Math.PI * 2); ctx.fill(); ctx.strokeStyle = '#000'; ctx.lineWidth = 2; ctx.stroke(); } ctx.restore(); }
+// Предмет в руке удалённого игрока + анимация взмаха
+if (p.activeItem) {
+let swK = (p.remoteSwingTimer || 0) > 0 ? 1 - p.remoteSwingTimer / SWING_DURATION : 0;
+let sw = Math.sin(swK * Math.PI);
+let it = TextureManager.get('items', p.activeItem.toLowerCase().replace(/ /g, '_'));
+ctx.save(); ctx.translate(20 + sw * 10, 16 - sw * 8); ctx.rotate(0.35 - sw * 1.7);
+if (it) ctx.drawImage(it, -13, -13, 26, 26);
+else { ctx.fillStyle = getItemFallbackColor(p.activeItem); ctx.beginPath(); ctx.arc(0, 0, 9, 0, Math.PI * 2); ctx.fill(); ctx.strokeStyle = '#000'; ctx.lineWidth = 2; ctx.stroke(); }
+ctx.restore();
+}
 ctx.restore();
 ctx.fillStyle = '#ffffff'; ctx.font = 'bold 14px sans-serif'; ctx.textAlign = 'center'; ctx.shadowColor = 'black'; ctx.shadowBlur = 4; ctx.fillText(p.nickname || 'Survivor', sX, sY - 38); ctx.shadowBlur = 0;
 ctx.fillStyle = '#333333'; ctx.fillRect(sX - 25, sY - 30, 50, 5); const hp = Math.max(0, Math.min(50, (p.health / 100) * 50)); ctx.fillStyle = '#ef4444'; ctx.fillRect(sX - 25, sY - 30, hp, 5);
 }
 }
 document.addEventListener("DOMContentLoaded", () => { setTimeout(initNetworkMenu, 100); });
+
+// ============================================================
 // 2. ОСНОВНОЙ ДВИЖОК ИГРЫ
+// ============================================================
 const TextureManager = { textures: {}, basePath: 'textures/', load: function(c, n) { const k = `${c}/${n}`; const i = new Image(); i.src = this.basePath + k + '.png'; i.onerror = () => { delete this.textures[k]; }; this.textures[k] = i; }, get: function(c, n) { const k = `${c}/${n}`; const i = this.textures[k]; if (i && i.complete && i.naturalHeight !== 0) return i; return null; } };
 const playerTexture = new Image(); playerTexture.src = 'player.png';
 const canvas = document.getElementById('gameCanvas'); const ctx = canvas.getContext('2d'); window.canvas = canvas; window.ctx = ctx;
@@ -356,14 +444,49 @@ Object.keys(BIOMES).forEach(k => TextureManager.load('tiles', k.toLowerCase()));
 const RECIPES = [ { name: 'AXE', ingredients: { 'rock': 3, 'stick': 2 } }, { name: 'PICKAXE', ingredients: { 'rock': 3, 'stick': 2 } }, { name: 'SHOVEL', ingredients: { 'rock': 1, 'stick': 2 } }, { name: 'STONE SPEAR', ingredients: { 'rock': 1, 'stick': 2 } }, { name: 'STONE KNIFE', ingredients: { 'rock': 1, 'stick': 1 } }, { name: 'BOW', ingredients: { 'stick': 3, 'sinew': 3 } }, { name: 'ARROW', ingredients: { 'stick': 8, 'rock': 1 }, outputCount: 8 }, { name: 'PRIMITIVE FURNACE', ingredients: { 'rock': 5, 'mud': 3 } }, { name: 'RAFT', ingredients: { 'log': 3 } }, { name: 'DOOR', ingredients: { 'log': 2 } }, { name: 'BRICK WALL', ingredients: { 'brick': 4 } }, { name: 'BRICK FURNACE', ingredients: { 'brick wall': 3, 'brick': 5 } }, { name: 'GUNPOWDER', ingredients: { 'sulfur': 1, 'coal': 1 } }, { name: 'BULLET', ingredients: { 'gunpowder': 8, 'copper ingot': 1 }, outputCount: 8 }, { name: 'MUSKET', ingredients: { 'iron ingot': 3, 'log': 1 } }, { name: 'CLAY VESSEL', ingredients: { 'clay': 3 } }, { name: 'BOTTLE', ingredients: { 'glass': 2 } }, { name: 'BOTTLE OF JUICE', ingredients: { 'bottle': 1, 'apple': 1 } }, { name: 'BOTTLE OF JUICE', ingredients: { 'bottle': 1, 'wildberries': 1 } }, { name: 'BOTTLE OF JUICE', ingredients: { 'bottle': 1, 'carrot': 1 } }, { name: 'COPPER AXE', ingredients: { 'copper ingot': 3, 'stick': 2 } }, { name: 'COPPER PICKAXE', ingredients: { 'copper ingot': 3, 'stick': 2 } }, { name: 'COPPER SHOVEL', ingredients: { 'copper ingot': 1, 'stick': 2 } }, { name: 'BRONZE AXE', ingredients: { 'bronze ingot': 3, 'stick': 2 } }, { name: 'BRONZE PICKAXE', ingredients: { 'bronze ingot': 3, 'stick': 2 } }, { name: 'BRONZE SHOVEL', ingredients: { 'bronze ingot': 1, 'stick': 2 } }, { name: 'IRON AXE', ingredients: { 'iron ingot': 3, 'stick': 2 } }, { name: 'IRON PICKAXE', ingredients: { 'iron ingot': 3, 'stick': 2 } }, { name: 'IRON SHOVEL', ingredients: { 'iron ingot': 1, 'stick': 2 } }, { name: 'BRONZE INGOT', ingredients: { 'copper ingot': 3, 'tin ingot': 1 } }, { name: 'COPPER SPEAR', ingredients: { 'copper ingot': 2, 'stick': 2 } }, { name: 'COPPER KNIFE', ingredients: { 'copper ingot': 1, 'stick': 1 } }, { name: 'BRONZE SPEAR', ingredients: { 'bronze ingot': 2, 'stick': 2 } }, { name: 'BRONZE KNIFE', ingredients: { 'bronze ingot': 1, 'stick': 1 } }, { name: 'IRON SPEAR', ingredients: { 'iron ingot': 2, 'stick': 2 } }, { name: 'IRON KNIFE', ingredients: { 'iron ingot': 1, 'stick': 1 } }, { name: 'SPINDLE', ingredients: { 'stick': 3 } }, { name: 'YARN', ingredients: { 'wool': 1 }, toolRequired: 'spindle' }, { name: 'LOOM', ingredients: { 'log': 2, 'stick': 3 } }, { name: 'BED', ingredients: { 'log': 3, 'cloth': 3 } } ];
 const DEV_RESOURCES = [ 'rock', 'stick', 'log', 'mud', 'sand', 'clay', 'coal', 'sulfur', 'copper ore', 'tin ore', 'iron ore', 'copper ingot', 'tin ingot', 'iron ingot', 'bronze ingot', 'brick', 'glass', 'apple', 'wildberries', 'carrot', 'meat', 'cooked meat', 'seaweed', 'hide', 'fat', 'wool', 'sinew', 'gunpowder', 'bullet', 'clay vessel', 'fired clay vessel', 'fired clay vessel with water', 'bottle', 'bottle of juice', 'axe', 'pickaxe', 'shovel', 'stone spear', 'stone knife', 'bow', 'arrow', 'musket', 'primitive furnace', 'raft', 'door', 'brick wall', 'brick furnace', 'copper axe', 'copper pickaxe', 'copper shovel', 'bronze axe', 'bronze pickaxe', 'bronze shovel', 'iron axe', 'iron pickaxe', 'iron shovel', 'copper spear', 'copper knife', 'bronze spear', 'bronze knife', 'iron spear', 'iron knife', 'spindle', 'yarn', 'cloth', 'loom', 'bed' ];
 const DEV_OBJECTS = [ { name: 'Tree', type: 'tree', data: { health: 3 } }, { name: 'Stone', type: 'stone', data: { health: 4 } }, { name: 'Cave Entrance', type: 'cave_entrance', data: {} }, { name: 'Bush', type: 'bush', data: { health: 2 } }, { name: 'Seaweed', type: 'seaweed_plant', data: { health: 1 } }, { name: 'Placed Log', type: 'placed_log', data: { health: 3 } }, { name: 'Door', type: 'door', data: { health: 2 } }, { name: 'Brick Wall', type: 'brick_wall', data: { health: 5 } }, { name: 'Primitive Furnace', type: 'furnace', data: { cookProgress: 0, itemSlot: null, fuelSlot: null, resultSlot: null } }, { name: 'Brick Furnace', type: 'brick_furnace', data: { cookProgress: [0,0,0], itemSlots: [null,null,null], fuelSlot: null, resultSlots: [null,null,null] } }, { name: 'Copper Ore', type: 'copper_ore', data: { health: 4 } }, { name: 'Tin Ore', type: 'tin_ore', data: { health: 3 } }, { name: 'Iron Ore', type: 'iron_ore', data: { health: 5 } }, { name: 'Sulfur Ore', type: 'sulfur_ore', data: { health: 3 } }, { name: 'Coal Ore', type: 'coal_ore', data: { health: 3 } }, { name: 'Loom', type: 'loom', data: { itemSlot: null, resultSlot: null, progress: 0 } }, { name: 'Bed', type: 'bed', data: { health: 2 } } ];
-// НОВОЕ: паук добавлен в список животных для DEV-меню
 const DEV_ANIMALS = ['pig', 'sheep', 'deer', 'wolf', 'spider'];
 DEV_OBJECTS.forEach(o => TextureManager.load('objects', o.type)); DEV_ANIMALS.forEach(a => TextureManager.load('animals', a)); DEV_RESOURCES.forEach(r => TextureManager.load('items', r.toLowerCase().replace(/ /g, '_')));
 const WEAPON_STATS = { 'STONE SPEAR': { damage: 25, range: 120, cooldown: 1.0 }, 'STONE KNIFE': { damage: 10, range: 50, cooldown: 0.4 }, 'COPPER SPEAR': { damage: 40, range: 120, cooldown: 1.0 }, 'COPPER KNIFE': { damage: 20, range: 50, cooldown: 0.4 }, 'BRONZE SPEAR': { damage: 50, range: 120, cooldown: 1.0 }, 'BRONZE KNIFE': { damage: 25, range: 50, cooldown: 0.4 }, 'IRON SPEAR': { damage: 60, range: 120, cooldown: 1.0 }, 'IRON KNIFE': { damage: 30, range: 50, cooldown: 0.4 }, 'BOW': { damage: 30, range: 600, cooldown: 1.0 }, 'MUSKET': { damage: 100, range: 1200, cooldown: 1.5 }, 'BARE HANDS': { damage: 1, range: 40, cooldown: 0.5 } };
-function getBiomeAt(tileX, tileY) { let e = fbm2D(tileX * 0.02, tileY * 0.02, 4); let t = fbm2D(tileX * 0.015 + 200, tileY * 0.015 + 200, 3); let m = fbm2D(tileX * 0.02 + 400, tileY * 0.02 + 400, 3); if (e < 0.38) return BIOMES.SEA; let rp = Math.abs(Math.sin(fbm2D(tileX * 0.05 + 600, tileY * 0.05 + 600, 2) * Math.PI)); if (rp < 0.12) return BIOMES.RIVER; if (e < 0.42) { let bn = fbm2D(tileX * 0.1 + 1000, tileY * 0.1 + 1000, 2); return bn > 0.5 ? BIOMES.BEACH_SAND : BIOMES.BEACH_CLAY; } if (t < 0.35) return (m < 0.45) ? BIOMES.TUNDRA : BIOMES.TAIGA; else if (t < 0.65) { if (m < 0.35) return BIOMES.STEPPE; return (m < 0.65) ? BIOMES.PLAIN : BIOMES.FOREST; } else { if (m < 0.35) return BIOMES.DESERT; return (m < 0.60) ? BIOMES.STEPPE : BIOMES.PLAIN; } }
-let worldModifications = new Map(); window.worldModifications = worldModifications; let floorItems = []; let animals = []; let projectiles = [];
-// НОВОЕ: системы частиц, тряски объектов и анимаций подбора
+// Покадровый кэш биомов (очищается каждый кадр в gameLoop)
+const biomeCache = new Map();
+function getBiomeAt(tileX, tileY) {
+const ck = tileX + ',' + tileY;
+const cached = biomeCache.get(ck);
+if (cached) return cached;
+let e = fbm2D(tileX * 0.02, tileY * 0.02, 4); let t = fbm2D(tileX * 0.015 + 200, tileY * 0.015 + 200, 3); let m = fbm2D(tileX * 0.02 + 400, tileY * 0.02 + 400, 3);
+let b;
+if (e < 0.38) b = BIOMES.SEA;
+else {
+let rp = Math.abs(Math.sin(fbm2D(tileX * 0.05 + 600, tileY * 0.05 + 600, 2) * Math.PI));
+if (rp < 0.12) b = BIOMES.RIVER;
+else if (e < 0.42) { let bn = fbm2D(tileX * 0.1 + 1000, tileY * 0.1 + 1000, 2); b = bn > 0.5 ? BIOMES.BEACH_SAND : BIOMES.BEACH_CLAY; }
+else if (t < 0.35) b = (m < 0.45) ? BIOMES.TUNDRA : BIOMES.TAIGA;
+else if (t < 0.65) { if (m < 0.35) b = BIOMES.STEPPE; else b = (m < 0.65) ? BIOMES.PLAIN : BIOMES.FOREST; }
+else { if (m < 0.35) b = BIOMES.DESERT; else b = (m < 0.60) ? BIOMES.STEPPE : BIOMES.PLAIN; }
+}
+biomeCache.set(ck, b);
+return b;
+}
+let worldModifications = new Map(); window.worldModifications = worldModifications;
+// Реестр механизмов (печи/станки) вместо полного обхода карты каждый тик
+const MACHINE_TYPES = ['furnace', 'brick_furnace', 'loom'];
+let machineKeys = new Set();
+function registerMachine(key, feature) { if (feature && MACHINE_TYPES.includes(feature.type)) machineKeys.add(key); else machineKeys.delete(key); }
+// Единая точка изменения тайлов: кэш, реестр механизмов, сетевая рассылка
+function setTileFeature(key, value, broadcast = true) {
+worldModifications.set(key, value);
+registerMachine(key, value);
+if (broadcast && isMultiplayerMode && !isIncomingSync && socket) socket.emit('tile_modify', { key: key, value: value });
+}
+let floorItems = []; let animals = []; let projectiles = [];
 let particles = []; let tileShakes = new Map(); let pickupAnims = [];
+// Анимация взмаха предмета в руке
+const SWING_DURATION = 0.28;
+let swingTimer = 0; let swingPower = 1; let swingSeq = 0;
+function triggerSwing(power = 1) { swingTimer = SWING_DURATION; swingPower = power; swingSeq++; }
+// Отложенное обновление UI (не чаще 1 раза за кадр)
+let uiDirty = false;
+function requestUiUpdate() { uiDirty = true; }
 const FEATURE_COLORS = { tree: '#064e3b', stone: '#6b7280', coal_ore: '#111827', copper_ore: '#ea580c', tin_ore: '#cbd5e1', iron_ore: '#b45309', sulfur_ore: '#fde047', bush: '#2e7d32', seaweed_plant: '#0e7490', placed_log: '#b45309', door: '#8b5a2b', brick_wall: '#991b1b', loom: '#78350f', bed: '#ef4444' };
 function addTileShake(tx, ty, dim) { tileShakes.set(getTileKey(tx, ty, dim || player.currentDimension), 0.22); }
 function spawnParticles(x, y, color, count, speed, life) { for (let i = 0; i < count; i++) { let a = Math.random() * Math.PI * 2; let s = (0.3 + Math.random() * 0.7) * speed; particles.push({ x: x, y: y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, life: life * (0.6 + Math.random() * 0.4), maxLife: life, color: color, size: 2 + Math.random() * 4 }); } }
@@ -377,10 +500,23 @@ let inputs = { KeyW: false, KeyA: false, KeyS: false, KeyD: false }; let mouseWo
 let joystickActive = false; let joystickX = 0; let joystickY = 0; let joystickTouchId = null;
 function getTileKey(tx, ty, dim = player.currentDimension) { return `${dim}_${tx},${ty}`; }
 function generateTileFeatures(tx, ty, biome) {
-if (biome !== BIOMES.SEA && biome !== BIOMES.RIVER) { let re = Math.sin(tx * 12.9898 + ty * 78.233 + NOISE_SEED + 500) * 43758.5453123; re = re - Math.floor(re); if (re > 0.9998) { let f = { type: 'cave_entrance' }; worldModifications.set(getTileKey(tx, ty, 'surface'), f); worldModifications.set(getTileKey(tx, ty, 'cave'), f); return f; } }
-let dim = player.currentDimension; let key = getTileKey(tx, ty, dim); if (worldModifications.has(key)) return worldModifications.get(key);
+const dim = player.currentDimension;
+const key = getTileKey(tx, ty, dim);
+// Сначала кэш — это защищает построенные объекты от перезаписи входом в пещеру
+if (worldModifications.has(key)) return worldModifications.get(key);
+// Редкий вход в пещеру (только на поверхности, детерминирован по сиду)
+if (dim === 'surface' && biome !== BIOMES.SEA && biome !== BIOMES.RIVER) {
+let re = Math.sin(tx * 12.9898 + ty * 78.233 + NOISE_SEED + 500) * 43758.5453123;
+re = re - Math.floor(re);
+if (re > 0.9998) {
+const f = { type: 'cave_entrance' };
+setTileFeature(getTileKey(tx, ty, 'surface'), f, false);
+setTileFeature(getTileKey(tx, ty, 'cave'), f, false);
+return f;
+}
+}
 let rand = MathNoise2D(tx, ty); let feature = null;
-if (dim === 'cave') { if (rand < 0.05) feature = { type: 'iron_ore', health: 5 }; else if (rand < 0.11) feature = { type: 'copper_ore', health: 4 }; else if (rand < 0.17) feature = { type: 'tin_ore', health: 3 }; else if (rand < 0.19) feature = { type: 'sulfur_ore', health: 3 }; else if (rand < 0.24) feature = { type: 'coal_ore', health: 3 }; else if (rand < 0.38) feature = { type: 'stone', health: 4 }; worldModifications.set(key, feature); return feature; }
+if (dim === 'cave') { if (rand < 0.05) feature = { type: 'iron_ore', health: 5 }; else if (rand < 0.11) feature = { type: 'copper_ore', health: 4 }; else if (rand < 0.17) feature = { type: 'tin_ore', health: 3 }; else if (rand < 0.19) feature = { type: 'sulfur_ore', health: 3 }; else if (rand < 0.24) feature = { type: 'coal_ore', health: 3 }; else if (rand < 0.38) feature = { type: 'stone', health: 4 }; setTileFeature(key, feature, false); return feature; }
 if (biome === BIOMES.SEA) { if (rand < 0.06) feature = { type: 'seaweed_plant', health: 1 }; }
 else if (biome === BIOMES.FOREST || biome === BIOMES.TAIGA) {
 if (rand < 0.08) feature = { type: 'tree', health: 3 };
@@ -398,35 +534,34 @@ else if (biome === BIOMES.TUNDRA) { if (rand > 0.85 && rand < 0.88 && !isMultipl
 if (!feature && biome !== BIOMES.SEA && biome !== BIOMES.RIVER && biome !== BIOMES.DESERT && biome !== BIOMES.BEACH_SAND && biome !== BIOMES.BEACH_CLAY) { if (rand > 0.40 && rand < 0.48) feature = { type: 'bush', health: 2 }; }
 if (!feature && rand > 0.994) { if (biome === BIOMES.PLAIN || biome === BIOMES.STEPPE || biome === BIOMES.DESERT || biome === BIOMES.TUNDRA) feature = { type: 'coal_ore', health: 3 }; }
 if (!feature && biome !== BIOMES.SEA && biome !== BIOMES.RIVER) { let cv = fbm2D(tx * 0.045 + 700, ty * 0.045 + 700, 2); let tv = fbm2D(tx * 0.05 + 800, ty * 0.05 + 800, 2); let iv = fbm2D(tx * 0.055 + 900, ty * 0.055 + 900, 2); if (cv > 0.81 && rand < 0.10) feature = { type: 'copper_ore', health: 4 }; else if (tv > 0.84 && rand < 0.06) feature = { type: 'tin_ore', health: 3 }; else if (iv > 0.86 && rand < 0.035) feature = { type: 'iron_ore', health: 5 }; }
-worldModifications.set(key, feature); return feature;
+setTileFeature(key, feature, false); return feature;
 }
 function spawnFloorItem(wx, wy, name, count) { floorItems.push({ x: wx, y: wy, name: name, count: count, id: Math.random().toString(36).substr(2, 9), dim: player.currentDimension }); }
 player.currentDimension = 'surface'; if (!isMultiplayerMode) { spawnFloorItem(40, 40, 'stick', 2); spawnFloorItem(-80, 60, 'rock', 2); spawnFloorItem(60, -40, 'apple', 2); }
 function getGridArrayByType(type) { if (type === 'inventory') return inventory; if (type === 'crafting') return craftingGrid; if (type === 'hotbar') return hotbar; return null; }
-function addItemToInventory(name, count, durability) { let isTool = name.toLowerCase().includes('axe') || name.toLowerCase().includes('pickaxe') || name.toLowerCase().includes('shovel') || name.toLowerCase().includes('spear') || name.toLowerCase().includes('knife') || name.toLowerCase().includes('bow') || name.toLowerCase().includes('musket') || name.toLowerCase().includes('spindle'); if (!isTool || durability === undefined) { for (let i = 0; i < hotbar.length; i++) { if (hotbar[i] && hotbar[i].name === name) { hotbar[i].count += count; updateUiPanels(); return true; } } for (let i = 0; i < inventory.length; i++) { if (inventory[i] && inventory[i].name === name) { inventory[i].count += count; updateUiPanels(); return true; } } } for (let i = 0; i < hotbar.length; i++) { if (!hotbar[i]) { hotbar[i] = { name: name, count: count }; if (durability !== undefined) hotbar[i].durability = durability; updateUiPanels(); return true; } } for (let i = 0; i < inventory.length; i++) { if (!inventory[i]) { inventory[i] = { name: name, count: count }; if (durability !== undefined) inventory[i].durability = durability; updateUiPanels(); return true; } } return false; }
+function addItemToInventory(name, count, durability) { let isTool = name.toLowerCase().includes('axe') || name.toLowerCase().includes('pickaxe') || name.toLowerCase().includes('shovel') || name.toLowerCase().includes('spear') || name.toLowerCase().includes('knife') || name.toLowerCase().includes('bow') || name.toLowerCase().includes('musket') || name.toLowerCase().includes('spindle'); if (!isTool || durability === undefined) { for (let i = 0; i < hotbar.length; i++) { if (hotbar[i] && hotbar[i].name === name) { hotbar[i].count += count; requestUiUpdate(); return true; } } for (let i = 0; i < inventory.length; i++) { if (inventory[i] && inventory[i].name === name) { inventory[i].count += count; requestUiUpdate(); return true; } } } for (let i = 0; i < hotbar.length; i++) { if (!hotbar[i]) { hotbar[i] = { name: name, count: count }; if (durability !== undefined) hotbar[i].durability = durability; requestUiUpdate(); return true; } } for (let i = 0; i < inventory.length; i++) { if (!inventory[i]) { inventory[i] = { name: name, count: count }; if (durability !== undefined) inventory[i].durability = durability; requestUiUpdate(); return true; } } return false; }
 function getActiveTool(toolType) { let t = toolType.toUpperCase(); let active = hotbar[activeHotbarIndex]; if (!active) return null; let itemName = active.name.toUpperCase().trim(); let isMatch = false; if (t === 'AXE') isMatch = itemName.endsWith('AXE') && !itemName.includes('PICKAXE'); else if (t === 'PICKAXE') isMatch = itemName.includes('PICKAXE'); else if (t === 'SHOVEL') isMatch = itemName.endsWith('SHOVEL'); if (isMatch) return { slot: active, grid: hotbar, index: activeHotbarIndex }; return null; }
 function getActiveWeapon() { let active = hotbar[activeHotbarIndex]; if (!active) return { name: 'BARE HANDS', slot: null }; let name = active.name.toUpperCase(); if (name.includes('SPEAR') || name.includes('KNIFE') || name.includes('BOW') || name.includes('MUSKET')) return { name: name, slot: active }; return { name: 'BARE HANDS', slot: null }; }
-function rollToolBreak(toolRef) { if (!toolRef || !toolRef.slot || toolRef.slot.durability === undefined) return false; toolRef.slot.durability--; if (toolRef.slot.durability <= 0) { const bn = toolRef.slot.name; toolRef.grid[toolRef.index] = null; showNotification(`${bn.toUpperCase()} BROKE!`); updateUiPanels(); return true; } updateUiPanels(); return false; }
+function rollToolBreak(toolRef) { if (!toolRef || !toolRef.slot || toolRef.slot.durability === undefined) return false; toolRef.slot.durability--; if (toolRef.slot.durability <= 0) { const bn = toolRef.slot.name; toolRef.grid[toolRef.index] = null; SoundManager.play('break_tool'); showNotification(`${bn.toUpperCase()} BROKE!`); requestUiUpdate(); return true; } requestUiUpdate(); return false; }
 function updateCraftingCheck() { craftOutput = null; const gn = craftingGrid.map(s => s ? s.name.toLowerCase() : ""); const ar = ['rock','rock','','rock','stick','','','stick','']; const pr = ['rock','rock','rock','','stick','','','stick','']; const sr = ['','rock','','','stick','','','stick','']; const spr = ['','','','stick','','','rock','stick','']; const kr = ['','rock','','','stick','','','','']; const br = ['','','','stick','stick','stick','sinew','sinew','sinew']; const arr = ['stick','stick','stick','stick','rock','stick','stick','stick','stick']; const fr = ['rock','rock','rock','rock','','rock','mud','mud','mud']; const rr = ['','','','','','','log','log','log']; const dr = ['log','','','log','','','','','']; const bwr = ['brick','brick','','brick','brick','','','','']; const bfr = ['brick wall','brick wall','brick wall','brick','','brick','brick','brick','brick']; const bur = ['gunpowder','gunpowder','gunpowder','gunpowder','copper ingot','gunpowder','gunpowder','gunpowder','gunpowder']; const mr = ['','iron ingot','','','iron ingot','','log','iron ingot','']; const ca = ['copper ingot','copper ingot','','copper ingot','stick','','','stick','']; const cp = ['copper ingot','copper ingot','copper ingot','','stick','','','stick','']; const cs = ['','copper ingot','','','stick','','','stick','']; const ba = ['bronze ingot','bronze ingot','','bronze ingot','stick','','','stick','']; const bp = ['bronze ingot','bronze ingot','bronze ingot','','stick','','','stick','']; const bs = ['','bronze ingot','','','stick','','','stick','']; const ia = ['iron ingot','iron ingot','','iron ingot','stick','','','stick','']; const ip = ['iron ingot','iron ingot','iron ingot','','stick','','','stick','']; const is = ['','iron ingot','','','stick','','','stick','']; const csp = ['','','','stick','','','copper ingot','stick','']; const ck = ['','copper ingot','','','stick','','','','']; const bsp = ['','','','stick','','','bronze ingot','stick','']; const bk = ['','bronze ingot','','','stick','','','','']; const isp = ['','','','stick','','','iron ingot','stick','']; const ik = ['','iron ingot','','','stick','','','','']; const spR = ['','','','stick','stick','stick','','','']; const loomR = ['','stick','','stick','log','stick','log','','log']; const bedR = ['log','log','log','cloth','cloth','cloth','','','']; const cvr = ['', 'clay', '', 'clay', 'clay', 'clay', '', 'clay', '']; const btr = ['', 'glass', '', '', 'glass', '', '', '', '']; let ci = 0, ti = 0, sc = 0, cc = 0, ex = 0; craftingGrid.forEach(s => { if (s) { let n = s.name.toLowerCase(); if (n === 'copper ingot') ci++; else if (n === 'tin ingot') ti++; else if(n==='sulfur') sc++; else if(n==='coal') cc++; else ex++; } }); let tot = 0, bc = 0, fc = 0; craftingGrid.forEach(s => { if (s) { tot++; let n = s.name.toLowerCase(); if (n === 'bottle') bc++; else if (['apple', 'wildberries', 'carrot'].includes(n)) fc++; } }); if (gn.every((v, i) => v === ar[i])) craftOutput = { name: 'AXE', count: 1 }; else if (gn.every((v, i) => v === pr[i])) craftOutput = { name: 'PICKAXE', count: 1 }; else if (gn.every((v, i) => v === sr[i])) craftOutput = { name: 'SHOVEL', count: 1 }; else if (gn.every((v, i) => v === spr[i])) craftOutput = { name: 'STONE SPEAR', count: 1 }; else if (gn.every((v, i) => v === kr[i])) craftOutput = { name: 'STONE KNIFE', count: 1 }; else if (gn.every((v, i) => v === br[i])) craftOutput = { name: 'BOW', count: 1 }; else if (gn.every((v, i) => v === arr[i])) craftOutput = { name: 'ARROW', count: 8 }; else if (gn.every((v, i) => v === fr[i])) craftOutput = { name: 'PRIMITIVE FURNACE', count: 1 }; else if (gn.every((v, i) => v === rr[i])) craftOutput = { name: 'RAFT', count: 1 }; else if (gn.every((v, i) => v === dr[i])) craftOutput = { name: 'DOOR', count: 1 }; else if (gn.every((v, i) => v === bwr[i])) craftOutput = { name: 'BRICK WALL', count: 1 }; else if (gn.every((v, i) => v === bfr[i])) craftOutput = { name: 'BRICK FURNACE', count: 1 }; else if (gn.every((v, i) => v === bur[i])) craftOutput = { name: 'BULLET', count: 8 }; else if (gn.every((v, i) => v === mr[i])) craftOutput = { name: 'MUSKET', count: 1 }; else if (gn.every((v, i) => v === cvr[i])) craftOutput = { name: 'CLAY VESSEL', count: 1 }; else if (gn.every((v, i) => v === btr[i])) craftOutput = { name: 'BOTTLE', count: 1 }; else if (gn.every((v, i) => v === ca[i])) craftOutput = { name: 'COPPER AXE', count: 1 }; else if (gn.every((v, i) => v === cp[i])) craftOutput = { name: 'COPPER PICKAXE', count: 1 }; else if (gn.every((v, i) => v === cs[i])) craftOutput = { name: 'COPPER SHOVEL', count: 1 }; else if (gn.every((v, i) => v === ba[i])) craftOutput = { name: 'BRONZE AXE', count: 1 }; else if (gn.every((v, i) => v === bp[i])) craftOutput = { name: 'BRONZE PICKAXE', count: 1 }; else if (gn.every((v, i) => v === bs[i])) craftOutput = { name: 'BRONZE SHOVEL', count: 1 }; else if (gn.every((v, i) => v === ia[i])) craftOutput = { name: 'IRON AXE', count: 1 }; else if (gn.every((v, i) => v === ip[i])) craftOutput = { name: 'IRON PICKAXE', count: 1 }; else if (gn.every((v, i) => v === is[i])) craftOutput = { name: 'IRON SHOVEL', count: 1 }; else if (gn.every((v, i) => v === csp[i])) craftOutput = { name: 'COPPER SPEAR', count: 1 }; else if (gn.every((v, i) => v === ck[i])) craftOutput = { name: 'COPPER KNIFE', count: 1 }; else if (gn.every((v, i) => v === bsp[i])) craftOutput = { name: 'BRONZE SPEAR', count: 1 }; else if (gn.every((v, i) => v === bk[i])) craftOutput = { name: 'BRONZE KNIFE', count: 1 }; else if (gn.every((v, i) => v === isp[i])) craftOutput = { name: 'IRON SPEAR', count: 1 }; else if (gn.every((v, i) => v === ik[i])) craftOutput = { name: 'IRON KNIFE', count: 1 }; else if (gn.every((v, i) => v === spR[i])) craftOutput = { name: 'SPINDLE', count: 1 }; else if (gn.every((v, i) => v === loomR[i])) craftOutput = { name: 'LOOM', count: 1 }; else if (gn.every((v, i) => v === bedR[i])) craftOutput = { name: 'BED', count: 1 }; else if (ci === 3 && ti === 1 && ex === 0) craftOutput = { name: 'BRONZE INGOT', count: 1 }; else if (sc === 1 && cc === 1 && ex === 0) craftOutput = { name: 'GUNPOWDER', count: 1 }; else if (tot === 2 && bc === 1 && fc === 1) craftOutput = { name: 'BOTTLE OF JUICE', count: 1 }; renderCraftOutputSlot(); }
-function executeAutoCraft(recipe) { if (recipe.toolRequired) { let hasTool = false; const ca = (arr) => arr.forEach(s => { if (s && s.name.toLowerCase() === recipe.toolRequired.toLowerCase()) hasTool = true; }); ca(hotbar); ca(inventory); if (!hasTool) { showNotification(`Требуется: ${recipe.toolRequired.toUpperCase()}`); return; } } let req = { ...recipe.ingredients }; let acc = {}; for (let key in req) acc[key] = 0; const ac = (arr) => { arr.forEach(s => { if (s) { let n = s.name.toLowerCase(); if (acc[n] !== undefined) acc[n] += s.count; } }); }; ac(hotbar); ac(inventory); for (let key in req) { if (acc[key] < req[key]) { showNotification(`Не хватает: ${req[key]}x ${key.toUpperCase()}`); return; } } const si = (arr) => { arr.forEach((s, idx) => { if (s) { let n = s.name.toLowerCase(); if (req[n] && req[n] > 0) { if (s.count > req[n]) { s.count -= req[n]; req[n] = 0; } else { req[n] -= s.count; arr[idx] = null; } } } }); }; si(hotbar); si(inventory); addItemToInventory(recipe.name, recipe.outputCount || 1); showNotification(`Создано: ${recipe.name}!`); updateCraftingCheck(); updateUiPanels(); }
+function executeAutoCraft(recipe) { if (recipe.toolRequired) { let hasTool = false; const ca = (arr) => arr.forEach(s => { if (s && s.name.toLowerCase() === recipe.toolRequired.toLowerCase()) hasTool = true; }); ca(hotbar); ca(inventory); if (!hasTool) { SoundManager.play('error'); showNotification(`Требуется: ${recipe.toolRequired.toUpperCase()}`); return; } } let req = { ...recipe.ingredients }; let acc = {}; for (let key in req) acc[key] = 0; const ac = (arr) => { arr.forEach(s => { if (s) { let n = s.name.toLowerCase(); if (acc[n] !== undefined) acc[n] += s.count; } }); }; ac(hotbar); ac(inventory); for (let key in req) { if (acc[key] < req[key]) { SoundManager.play('error'); showNotification(`Не хватает: ${req[key]}x ${key.toUpperCase()}`); return; } } const si = (arr) => { arr.forEach((s, idx) => { if (s) { let n = s.name.toLowerCase(); if (req[n] && req[n] > 0) { if (s.count > req[n]) { s.count -= req[n]; req[n] = 0; } else { req[n] -= s.count; arr[idx] = null; } } } }); }; si(hotbar); si(inventory); addItemToInventory(recipe.name, recipe.outputCount || 1); SoundManager.play('craft'); showNotification(`Создано: ${recipe.name}!`); updateCraftingCheck(); requestUiUpdate(); }
 function buildRecipeBook() { const c = document.getElementById('recipeBookGrid'); c.innerHTML = ''; RECIPES.forEach(r => { let rs = document.createElement('div'); rs.className = 'recipe-slot'; let it = TextureManager.get('items', r.name.toLowerCase().replace(/ /g, '_')); if (it) { rs.style.backgroundImage = `url('${it.src}')`; rs.classList.add('has-texture'); let te = document.createElement('span'); te.className = 'item-text'; te.innerText = r.name; rs.appendChild(te); } else { rs.innerText = r.name; } rs.addEventListener('click', () => executeAutoCraft(r)); c.appendChild(rs); }); }
 function buildUiGrids() { const cs = (id, sz, tp) => { const t = document.getElementById(id); t.innerHTML = ''; for (let i = 0; i < sz; i++) { let s = document.createElement('div'); s.className = 'slot'; s.dataset.index = i; s.dataset.type = tp; s.addEventListener('mousedown', onSlotMouseDown); s.addEventListener('touchstart', onSlotTouchStart); s.addEventListener('contextmenu', e => e.preventDefault()); t.appendChild(s); } }; cs('inventoryGrid', 27, 'inventory'); cs('craftingGrid', 9, 'crafting'); cs('hotbarGrid', 9, 'hotbar'); let os = document.getElementById('craftOutputSlot'); os.dataset.type = 'output'; os.addEventListener('mousedown', onSlotMouseDown); os.addEventListener('touchstart', onSlotTouchStart); os.addEventListener('contextmenu', e => e.preventDefault()); document.querySelectorAll('[data-furnace]').forEach(s => { s.addEventListener('mousedown', onFurnaceSlotMouseDown); s.addEventListener('touchstart', onFurnaceSlotTouchStart); s.addEventListener('contextmenu', e => e.preventDefault()); }); document.querySelectorAll('[data-bfurnace]').forEach(s => { s.addEventListener('mousedown', onBrickFurnaceSlotMouseDown); s.addEventListener('touchstart', onBrickFurnaceSlotTouchStart); s.addEventListener('contextmenu', e => e.preventDefault()); }); document.querySelectorAll('[data-loom]').forEach(s => { s.addEventListener('mousedown', onLoomSlotMouseDown); s.addEventListener('touchstart', onLoomSlotTouchStart); s.addEventListener('contextmenu', e => e.preventDefault()); }); buildRecipeBook(); }
 function updateUiPanels() { const sgs = (sel, ga) => { const sl = document.querySelectorAll(sel); sl.forEach((s, idx) => { s.innerHTML = ''; let i = ga[idx]; if (i) { let it = TextureManager.get('items', i.name.toLowerCase().replace(/ /g, '_')); if (it) { s.classList.add('has-texture'); s.style.backgroundImage = `url('${it.src}')`; let d = i.durability !== undefined ? ` [${i.durability}]` : ''; if(d) { let de = document.createElement('span'); de.className = 'item-text'; de.innerText = d; s.appendChild(de); } } else { s.classList.remove('has-texture'); s.style.backgroundImage = ''; let d = i.durability !== undefined ? ` [${i.durability}]` : ''; s.innerText = i.name.toUpperCase() + d; } let ce = document.createElement('span'); ce.className = 'count'; ce.innerText = i.count; s.appendChild(ce); } else { s.classList.remove('has-texture'); s.style.backgroundImage = ''; } if (sel.includes('hotbar')) { if (idx === activeHotbarIndex) { s.style.border = '2px solid #eab308'; s.style.boxShadow = '0 0 6px rgba(234,179,8,0.6)'; } else { s.style.border = '2px solid #555'; s.style.boxShadow = 'none'; } } }); }; sgs('#inventoryGrid .slot', inventory); sgs('#craftingGrid .slot', craftingGrid); sgs('#hotbarGrid .slot', hotbar); renderCraftOutputSlot(); updateFloatingCursorElement(); if (document.getElementById('scoreValue')) { document.getElementById('scoreValue').innerText = Math.floor(player.score); } }
 function renderCraftOutputSlot() { const os = document.getElementById('craftOutputSlot'); os.innerHTML = ''; if (craftOutput) { let it = TextureManager.get('items', craftOutput.name.toLowerCase().replace(/ /g, '_')); if (it) { os.classList.add('has-texture'); os.style.backgroundImage = `url('${it.src}')`; } else { os.classList.remove('has-texture'); os.style.backgroundImage = ''; os.innerText = craftOutput.name; } let ce = document.createElement('span'); ce.className = 'count'; ce.innerText = craftOutput.count; os.appendChild(ce); } else { os.classList.remove('has-texture'); os.style.backgroundImage = ''; } }
-function onSlotTouchStart(e) { e.preventDefault(); if (mobileModeEnabled && this.dataset.type === 'hotbar') { activeHotbarIndex = parseInt(this.dataset.index); updateUiPanels(); return; } onSlotMouseDown.call(this, { button: 0, preventDefault: () => {} }); }
+function onSlotTouchStart(e) { e.preventDefault(); if (mobileModeEnabled && this.dataset.type === 'hotbar') { activeHotbarIndex = parseInt(this.dataset.index); requestUiUpdate(); return; } onSlotMouseDown.call(this, { button: 0, preventDefault: () => {} }); }
 function onFurnaceSlotTouchStart(e) { e.preventDefault(); onFurnaceSlotMouseDown.call(this, { button: 0, preventDefault: () => {} }); }
 function onBrickFurnaceSlotTouchStart(e) { e.preventDefault(); onBrickFurnaceSlotMouseDown.call(this, { button: 0, preventDefault: () => {} }); }
 function onLoomSlotTouchStart(e) { e.preventDefault(); onLoomSlotMouseDown.call(this, { button: 0, preventDefault: () => {} }); }
-function onSlotMouseDown(e) { e.preventDefault(); let type = this.dataset.type; let idx = parseInt(this.dataset.index); if (type === 'output') { if (craftOutput) { let ci = { ...craftOutput }; let tn = ci.name.toLowerCase(); if (tn.includes('axe') || tn.includes('pickaxe') || tn.includes('shovel') || tn.includes('spear') || tn.includes('knife') || tn.includes('bow') || tn.includes('musket') || tn.includes('spindle')) { if (tn.includes('iron') || tn.includes('musket')) ci.durability = 100; else if (tn.includes('bronze')) ci.durability = 80; else if (tn.includes('copper')) ci.durability = 60; else ci.durability = 40; } if (heldItem == null) { heldItem = ci; consumeCraftingIngredients(); } else if (heldItem.name === ci.name && !heldItem.durability) { heldItem.count += ci.count; consumeCraftingIngredients(); } else if (heldItem.name === ci.name && heldItem.durability !== undefined) { showNotification("Нельзя держать несколько инструментов!"); } else { showNotification("Очистите курсор!"); } updateCraftingCheck(); updateUiPanels(); } return; } let grid = getGridArrayByType(type); let si = grid[idx]; if (e.button === 0) { if (heldItem == null) { if (si != null) { heldItem = si; grid[idx] = null; } } else { if (si == null) { grid[idx] = heldItem; heldItem = null; } else if (si.name === heldItem.name) { si.count += heldItem.count; heldItem = null; } else { let temp = si; grid[idx] = heldItem; heldItem = temp; } } } else if (e.button === 2) { if (heldItem == null) { if (si != null) { if (si.count === 1) { heldItem = si; grid[idx] = null; } else { heldItem = { name: si.name, count: 1 }; si.count--; } } } else { if (si == null) { grid[idx] = { name: heldItem.name, count: 1 }; heldItem.count--; if (heldItem.count <= 0) heldItem = null; } else if (si.name === heldItem.name) { si.count++; heldItem.count--; if (heldItem.count <= 0) heldItem = null; } else { let temp = si; grid[idx] = heldItem; heldItem = temp; } } } updateCraftingCheck(); updateUiPanels(); }
-function onFurnaceSlotMouseDown(e) { e.preventDefault(); if (!currentFurnaceTile) return; let st = this.dataset.furnace; let ti = null; if (st === 'item') ti = currentFurnaceTile.itemSlot; if (st === 'fuel') ti = currentFurnaceTile.fuelSlot; if (st === 'result') ti = currentFurnaceTile.resultSlot; if (e.button === 0) { if (st === 'result') { if (ti) { if (heldItem == null) { heldItem = ti; currentFurnaceTile.resultSlot = null; } else if (heldItem.name === ti.name) { heldItem.count += ti.count; currentFurnaceTile.resultSlot = null; } } } else { if (heldItem && st === 'fuel' && !['coal', 'log'].includes(heldItem.name.toLowerCase())) { showNotification("Только УГОЛЬ или БРЕВНО!"); return; } if (heldItem == null) { if (ti) { heldItem = ti; if (st === 'item') currentFurnaceTile.itemSlot = null; if (st === 'fuel') currentFurnaceTile.fuelSlot = null; } } else { if (ti == null) { if (st === 'item') currentFurnaceTile.itemSlot = heldItem; if (st === 'fuel') currentFurnaceTile.fuelSlot = heldItem; heldItem = null; } else if (ti.name === heldItem.name) { ti.count += heldItem.count; heldItem = null; } else { let tmp = ti; if (st === 'item') currentFurnaceTile.itemSlot = heldItem; if (st === 'fuel') currentFurnaceTile.fuelSlot = heldItem; heldItem = tmp; } } } } updateFurnaceUi(); updateUiPanels(); }
-function onBrickFurnaceSlotMouseDown(e) { e.preventDefault(); if (!currentBrickFurnaceTile) return; let st = this.dataset.bfurnace; let ti = null; let idx = -1; if (st.startsWith('item')) { idx = parseInt(st.replace('item','')); ti = currentBrickFurnaceTile.itemSlots[idx]; } else if (st.startsWith('result')) { idx = parseInt(st.replace('result','')); ti = currentBrickFurnaceTile.resultSlots[idx]; } else if (st === 'fuel') { ti = currentBrickFurnaceTile.fuelSlot; } if (e.button === 0) { if (heldItem && st === 'fuel' && !['coal', 'log'].includes(heldItem.name.toLowerCase())) { showNotification("Только УГОЛЬ или БРЕВНО!"); return; } if (heldItem != null && st.startsWith('result')) { return; } if (heldItem == null) { if (ti) { heldItem = ti; if (st.startsWith('item')) currentBrickFurnaceTile.itemSlots[idx] = null; if (st.startsWith('result')) currentBrickFurnaceTile.resultSlots[idx] = null; if (st === 'fuel') currentBrickFurnaceTile.fuelSlot = null; } } else { if (ti == null) { if (st.startsWith('item')) currentBrickFurnaceTile.itemSlots[idx] = heldItem; if (st === 'fuel') currentBrickFurnaceTile.fuelSlot = heldItem; heldItem = null; } else if (ti.name === heldItem.name) { ti.count += heldItem.count; heldItem = null; } else { let tmp = ti; if (st.startsWith('item')) currentBrickFurnaceTile.itemSlots[idx] = heldItem; if (st === 'fuel') currentBrickFurnaceTile.fuelSlot = heldItem; heldItem = tmp; } } } updateBrickFurnaceUi(); updateUiPanels(); }
-function onLoomSlotMouseDown(e) { e.preventDefault(); if (!currentLoomTile) return; let st = this.dataset.loom; let ti = null; if (st === 'item') ti = currentLoomTile.itemSlot; else if (st === 'result') ti = currentLoomTile.resultSlot; if (e.button === 0) { if (st === 'result') { if (ti) { if (heldItem == null) { heldItem = ti; currentLoomTile.resultSlot = null; } else if (heldItem.name === ti.name) { heldItem.count += ti.count; currentLoomTile.resultSlot = null; } } } else if (st === 'item') { if (heldItem && heldItem.name.toLowerCase() !== 'yarn') { showNotification("Вставьте ПРЯЖУ!"); return; } if (heldItem == null) { if (ti) { heldItem = ti; currentLoomTile.itemSlot = null; } } else { if (ti == null) { currentLoomTile.itemSlot = heldItem; heldItem = null; } else if (ti.name === heldItem.name) { ti.count += heldItem.count; heldItem = null; } else { let tmp = ti; currentLoomTile.itemSlot = heldItem; heldItem = tmp; } } } } updateLoomUi(); updateUiPanels(); }
+function onSlotMouseDown(e) { e.preventDefault(); let type = this.dataset.type; let idx = parseInt(this.dataset.index); if (type === 'output') { if (craftOutput) { let ci = { ...craftOutput }; let tn = ci.name.toLowerCase(); if (tn.includes('axe') || tn.includes('pickaxe') || tn.includes('shovel') || tn.includes('spear') || tn.includes('knife') || tn.includes('bow') || tn.includes('musket') || tn.includes('spindle')) { if (tn.includes('iron') || tn.includes('musket')) ci.durability = 100; else if (tn.includes('bronze')) ci.durability = 80; else if (tn.includes('copper')) ci.durability = 60; else ci.durability = 40; } if (heldItem == null) { heldItem = ci; consumeCraftingIngredients(); SoundManager.play('craft'); } else if (heldItem.name === ci.name && !heldItem.durability) { heldItem.count += ci.count; consumeCraftingIngredients(); SoundManager.play('craft'); } else if (heldItem.name === ci.name && heldItem.durability !== undefined) { SoundManager.play('error'); showNotification("Нельзя держать несколько инструментов!"); } else { SoundManager.play('error'); showNotification("Очистите курсор!"); } updateCraftingCheck(); requestUiUpdate(); } return; } let grid = getGridArrayByType(type); let si = grid[idx]; if (e.button === 0) { if (heldItem == null) { if (si != null) { heldItem = si; grid[idx] = null; } } else { if (si == null) { grid[idx] = heldItem; heldItem = null; } else if (si.name === heldItem.name) { si.count += heldItem.count; heldItem = null; } else { let temp = si; grid[idx] = heldItem; heldItem = temp; } } } else if (e.button === 2) { if (heldItem == null) { if (si != null) { if (si.count === 1) { heldItem = si; grid[idx] = null; } else { heldItem = { name: si.name, count: 1 }; si.count--; } } } else { if (si == null) { grid[idx] = { name: heldItem.name, count: 1 }; heldItem.count--; if (heldItem.count <= 0) heldItem = null; } else if (si.name === heldItem.name) { si.count++; heldItem.count--; if (heldItem.count <= 0) heldItem = null; } else { let temp = si; grid[idx] = heldItem; heldItem = temp; } } } updateCraftingCheck(); requestUiUpdate(); }
+function onFurnaceSlotMouseDown(e) { e.preventDefault(); if (!currentFurnaceTile) return; let st = this.dataset.furnace; let ti = null; if (st === 'item') ti = currentFurnaceTile.itemSlot; if (st === 'fuel') ti = currentFurnaceTile.fuelSlot; if (st === 'result') ti = currentFurnaceTile.resultSlot; if (e.button === 0) { if (st === 'result') { if (ti) { if (heldItem == null) { heldItem = ti; currentFurnaceTile.resultSlot = null; } else if (heldItem.name === ti.name) { heldItem.count += ti.count; currentFurnaceTile.resultSlot = null; } } } else { if (heldItem && st === 'fuel' && !['coal', 'log'].includes(heldItem.name.toLowerCase())) { SoundManager.play('error'); showNotification("Только УГОЛЬ или БРЕВНО!"); return; } if (heldItem == null) { if (ti) { heldItem = ti; if (st === 'item') currentFurnaceTile.itemSlot = null; if (st === 'fuel') currentFurnaceTile.fuelSlot = null; } } else { if (ti == null) { if (st === 'item') currentFurnaceTile.itemSlot = heldItem; if (st === 'fuel') currentFurnaceTile.fuelSlot = heldItem; heldItem = null; } else if (ti.name === heldItem.name) { ti.count += heldItem.count; heldItem = null; } else { let tmp = ti; if (st === 'item') currentFurnaceTile.itemSlot = heldItem; if (st === 'fuel') currentFurnaceTile.fuelSlot = heldItem; heldItem = tmp; } } } } updateFurnaceUi(); requestUiUpdate(); }
+function onBrickFurnaceSlotMouseDown(e) { e.preventDefault(); if (!currentBrickFurnaceTile) return; let st = this.dataset.bfurnace; let ti = null; let idx = -1; if (st.startsWith('item')) { idx = parseInt(st.replace('item','')); ti = currentBrickFurnaceTile.itemSlots[idx]; } else if (st.startsWith('result')) { idx = parseInt(st.replace('result','')); ti = currentBrickFurnaceTile.resultSlots[idx]; } else if (st === 'fuel') { ti = currentBrickFurnaceTile.fuelSlot; } if (e.button === 0) { if (heldItem && st === 'fuel' && !['coal', 'log'].includes(heldItem.name.toLowerCase())) { SoundManager.play('error'); showNotification("Только УГОЛЬ или БРЕВНО!"); return; } if (heldItem != null && st.startsWith('result')) { return; } if (heldItem == null) { if (ti) { heldItem = ti; if (st.startsWith('item')) currentBrickFurnaceTile.itemSlots[idx] = null; if (st.startsWith('result')) currentBrickFurnaceTile.resultSlots[idx] = null; if (st === 'fuel') currentBrickFurnaceTile.fuelSlot = null; } } else { if (ti == null) { if (st.startsWith('item')) currentBrickFurnaceTile.itemSlots[idx] = heldItem; if (st === 'fuel') currentBrickFurnaceTile.fuelSlot = heldItem; heldItem = null; } else if (ti.name === heldItem.name) { ti.count += heldItem.count; heldItem = null; } else { let tmp = ti; if (st.startsWith('item')) currentBrickFurnaceTile.itemSlots[idx] = heldItem; if (st === 'fuel') currentBrickFurnaceTile.fuelSlot = heldItem; heldItem = tmp; } } } updateBrickFurnaceUi(); requestUiUpdate(); }
+function onLoomSlotMouseDown(e) { e.preventDefault(); if (!currentLoomTile) return; let st = this.dataset.loom; let ti = null; if (st === 'item') ti = currentLoomTile.itemSlot; else if (st === 'result') ti = currentLoomTile.resultSlot; if (e.button === 0) { if (st === 'result') { if (ti) { if (heldItem == null) { heldItem = ti; currentLoomTile.resultSlot = null; } else if (heldItem.name === ti.name) { heldItem.count += ti.count; currentLoomTile.resultSlot = null; } } } else if (st === 'item') { if (heldItem && heldItem.name.toLowerCase() !== 'yarn') { SoundManager.play('error'); showNotification("Вставьте ПРЯЖУ!"); return; } if (heldItem == null) { if (ti) { heldItem = ti; currentLoomTile.itemSlot = null; } } else { if (ti == null) { currentLoomTile.itemSlot = heldItem; heldItem = null; } else if (ti.name === heldItem.name) { ti.count += heldItem.count; heldItem = null; } else { let tmp = ti; currentLoomTile.itemSlot = heldItem; heldItem = tmp; } } } } updateLoomUi(); requestUiUpdate(); }
 function updateFurnaceUi() { if (!currentFurnaceTile) return; const ie = document.getElementById('furnaceItemSlot'); const fe = document.getElementById('furnaceFuelSlot'); const re = document.getElementById('furnaceResultSlot'); const pe = document.getElementById('furnaceProgress'); const sync = (el, item, dt) => { el.innerHTML = ''; if (item) { let it = TextureManager.get('items', item.name.toLowerCase().replace(/ /g, '_')); if(it) { el.style.backgroundImage = `url('${it.src}')`; el.classList.add('has-texture'); } else { el.style.backgroundImage = ''; el.classList.remove('has-texture'); el.innerText = item.name.toUpperCase(); } let ce = document.createElement('span'); ce.className = 'count'; ce.innerText = item.count; el.appendChild(ce); } else { el.style.backgroundImage = ''; el.classList.remove('has-texture'); el.innerText = dt; } }; sync(ie, currentFurnaceTile.itemSlot, "Item"); sync(fe, currentFurnaceTile.fuelSlot, "Fuel"); sync(re, currentFurnaceTile.resultSlot, "Result"); pe.innerText = `${Math.floor(currentFurnaceTile.cookProgress)}%`; }
 function updateBrickFurnaceUi() { if (!currentBrickFurnaceTile) return; for(let i=0; i<3; i++) { const ie = document.getElementById(`bfurnaceItem${i}`); const re = document.getElementById(`bfurnaceResult${i}`); const sync = (el, item, dt) => { el.innerHTML = ''; if (item) { let it = TextureManager.get('items', item.name.toLowerCase().replace(/ /g, '_')); if(it) { el.style.backgroundImage = `url('${it.src}')`; el.classList.add('has-texture'); } else { el.style.backgroundImage = ''; el.classList.remove('has-texture'); el.innerText = item.name.toUpperCase(); } let ce = document.createElement('span'); ce.className = 'count'; ce.innerText = item.count; el.appendChild(ce); } else { el.style.backgroundImage = ''; el.classList.remove('has-texture'); el.innerText = dt; } }; sync(ie, currentBrickFurnaceTile.itemSlots[i], `In ${i+1}`); sync(re, currentBrickFurnaceTile.resultSlots[i], `Out ${i+1}`); } const fe = document.getElementById('bfurnaceFuelSlot'); const pe = document.getElementById('bfurnaceProgress'); fe.innerHTML = ''; if(currentBrickFurnaceTile.fuelSlot) { let it = TextureManager.get('items', currentBrickFurnaceTile.fuelSlot.name.toLowerCase().replace(/ /g, '_')); if(it) { fe.style.backgroundImage = `url('${it.src}')`; fe.classList.add('has-texture'); fe.innerText = ''; } else { fe.style.backgroundImage = ''; fe.classList.remove('has-texture'); fe.innerText = currentBrickFurnaceTile.fuelSlot.name.toUpperCase(); } let c = document.createElement('span'); c.className='count'; c.innerText=currentBrickFurnaceTile.fuelSlot.count; fe.appendChild(c); } else { fe.style.backgroundImage = ''; fe.classList.remove('has-texture'); fe.innerText='Fuel'; } let tp = currentBrickFurnaceTile.cookProgress.reduce((a,b)=>a+b, 0)/3; pe.innerText = `${Math.floor(tp)}%`; }
 function updateLoomUi() { if (!currentLoomTile) return; const ie = document.getElementById('loomItemSlot'); const re = document.getElementById('loomResultSlot'); const pb = document.getElementById('loomProgressBar'); const pt = document.getElementById('loomProgressText'); const sync = (el, item, dt) => { el.innerHTML = ''; if (item) { let it = TextureManager.get('items', item.name.toLowerCase().replace(/ /g, '_')); if(it) { el.style.backgroundImage = `url('${it.src}')`; el.classList.add('has-texture'); } else { el.style.backgroundImage = ''; el.classList.remove('has-texture'); el.innerText = item.name.toUpperCase(); } let ce = document.createElement('span'); ce.className = 'count'; ce.innerText = item.count; el.appendChild(ce); } else { el.style.backgroundImage = ''; el.classList.remove('has-texture'); el.innerText = dt; } }; sync(ie, currentLoomTile.itemSlot, "Пряжа"); sync(re, currentLoomTile.resultSlot, "Ткань"); pb.style.width = currentLoomTile.progress + '%'; pt.innerText = Math.floor(currentLoomTile.progress) + '%'; }
 function consumeCraftingIngredients() { for (let i = 0; i < 9; i++) { if (craftingGrid[i]) { craftingGrid[i].count--; if (craftingGrid[i].count <= 0) craftingGrid[i] = null; } } }
 function updateFloatingCursorElement() { const el = document.getElementById('floatingCursorItem'); if (heldItem) { el.innerText = `${heldItem.name.toUpperCase()} x${heldItem.count}`; el.style.display = 'block'; el.style.left = `${mouseScreenPos.x}px`; el.style.top = `${mouseScreenPos.y}px`; } else { el.style.display = 'none'; } }
-// НОВОЕ: Подбор предметов через ЛКМ
 function performLeftClick(mx, my) {
 // 1. Проверка предметов на полу (ЛКМ для подбора)
 for (let i = floorItems.length - 1; i >= 0; i--) {
@@ -435,18 +570,11 @@ if ((item.dim || 'surface') !== player.currentDimension) continue;
 let pDist = Math.hypot(player.x - item.x, player.y - item.y);
 let mDist = Math.hypot(item.x - mx, item.y - my);
 if (pDist < player.collectRadius && mDist < 24) {
-if (isMultiplayerMode && socket) {
-socket.emit('pickup_item', item.id);
-} else {
+if (isMultiplayerMode && socket) { socket.emit('pickup_item', item.id); }
+else {
 let collected = addItemToInventory(item.name, item.count);
-if (collected) {
-showNotification(`Подобрано: ${item.name.toUpperCase()} (x${item.count})`);
-// НОВОЕ: анимация подбора предмета
-startPickupAnim(item.name, item.x, item.y);
-floorItems.splice(i, 1);
-} else {
-showNotification("Инвентарь полон!");
-}
+if (collected) { SoundManager.play('pickup'); showNotification(`Подобрано: ${item.name.toUpperCase()} (x${item.count})`); startPickupAnim(item.name, item.x, item.y); floorItems.splice(i, 1); }
+else { SoundManager.play('error'); showNotification("Инвентарь полон!"); }
 }
 return;
 }
@@ -456,10 +584,11 @@ if (weapon.name === 'BOW' || weapon.name === 'MUSKET') {
 let an = weapon.name === 'BOW' ? 'arrow' : 'bullet'; let ha = false;
 for(let i=0; i<hotbar.length; i++) { if(hotbar[i] && hotbar[i].name.toLowerCase() === an) { ha = true; hotbar[i].count--; if(hotbar[i].count <= 0) hotbar[i] = null; break; } }
 if(!ha) { for(let i=0; i<inventory.length; i++) { if(inventory[i] && inventory[i].name.toLowerCase() === an) { ha = true; inventory[i].count--; if(inventory[i].count <= 0) inventory[i] = null; break; } } }
-if (!ha) { showNotification(`Нет ${an === 'arrow' ? 'стрел' : 'пуль'}!`); return; }
+if (!ha) { SoundManager.play('error'); showNotification(`Нет ${an === 'arrow' ? 'стрел' : 'пуль'}!`); return; }
 player.attackCooldown = WEAPON_STATS[weapon.name].cooldown; let dx = mx - player.x; let dy = my - player.y; let dist = Math.hypot(dx, dy); if (dist === 0) return;
 let sp = weapon.name === 'MUSKET' ? 2500 : 800; projectiles.push({ x: player.x, y: player.y, vx: (dx/dist) * sp, vy: (dy/dist) * sp, damage: WEAPON_STATS[weapon.name].damage, life: weapon.name === 'MUSKET' ? 0.8 : 2.0, dim: player.currentDimension, type: weapon.name === 'MUSKET' ? 'bullet' : 'arrow' });
-if (weapon.slot) rollToolBreak({ slot: weapon.slot, grid: hotbar, index: activeHotbarIndex }); updateUiPanels(); return;
+SoundManager.play(weapon.name === 'MUSKET' ? 'musket' : 'bow'); triggerSwing(0.5);
+if (weapon.slot) rollToolBreak({ slot: weapon.slot, grid: hotbar, index: activeHotbarIndex }); requestUiUpdate(); return;
 }
 let ws = WEAPON_STATS[weapon.name] || WEAPON_STATS['BARE HANDS'];
 // PvP Проверка
@@ -471,6 +600,7 @@ let dm = Math.hypot(rp.renderX - mx, rp.renderY - my);
 let dp = Math.hypot(rp.renderX - player.x, rp.renderY - player.y);
 if (dm < 25 && dp <= ws.range) {
 player.attackCooldown = ws.cooldown;
+triggerSwing(1); SoundManager.play('hit');
 if (weapon.slot) rollToolBreak({ slot: weapon.slot, grid: hotbar, index: activeHotbarIndex });
 socket.emit('damage_player', { targetId: id, damage: ws.damage });
 showNotification(`Попадание по игроку ${rp.nickname || ''}!`);
@@ -478,7 +608,7 @@ return;
 }
 }
 }
-// ИСПРАВЛЕНО: Проверка удара по животным (корректный расчет дистанции)
+// Проверка удара по животным
 for (let i = 0; i < animals.length; i++) {
 let a = animals[i];
 let aX = a.renderX !== undefined ? a.renderX : a.x;
@@ -487,13 +617,13 @@ let dm = Math.hypot(aX - mx, aY - my);
 let dp = Math.hypot(aX - player.x, aY - player.y);
 if (dm < (a.type === 'wolf' ? 40 : 30) && dp <= ws.range) {
 player.attackCooldown = ws.cooldown;
+triggerSwing(1); SoundManager.play('hit');
 if (weapon.slot) rollToolBreak({ slot: weapon.slot, grid: hotbar, index: activeHotbarIndex });
 if (isMultiplayerMode) {
 socket.emit('damage_animal', { id: a.id, damage: ws.damage });
 showNotification(`Попадание по ${a.type.toUpperCase()}!`);
 } else {
 a.health -= ws.damage;
-// НОВОЕ: частицы при попадании по животному
 spawnHitParticles(aX, aY, 'stone');
 if (a.health <= 0) {
 let drops = [];
@@ -501,9 +631,8 @@ if (a.type === 'pig') { drops.push({ name: 'hide', count: 1 }); drops.push({ nam
 else if (a.type === 'sheep') { drops.push({ name: 'hide', count: 1 }); drops.push({ name: 'meat', count: Math.floor(Math.random() * 2) + 1 }); drops.push({ name: 'wool', count: 1 }); }
 else if (a.type === 'deer') { drops.push({ name: 'hide', count: Math.floor(Math.random() * 2) + 1 }); drops.push({ name: 'meat', count: Math.floor(Math.random() * 3) + 2 }); drops.push({ name: 'sinew', count: 1 }); }
 else if (a.type === 'wolf') { drops.push({ name: 'hide', count: 1 }); }
-// НОВОЕ: дроп паука
 else if (a.type === 'spider') { drops.push({ name: 'sinew', count: 1 }); }
-drops.forEach(d => spawnFloorItem(a.x, a.y, d.name, d.count)); player.score += 30; animals.splice(i, 1); showNotification(`Убито: ${a.type.toUpperCase()}!`);
+drops.forEach(d => spawnFloorItem(a.x, a.y, d.name, d.count)); player.score += 30; animals.splice(i, 1); SoundManager.play('animal_death'); showNotification(`Убито: ${a.type.toUpperCase()}!`);
 } else {
 showNotification(`Попадание по ${a.type.toUpperCase()}! (-${ws.damage} HP)`); a.fleeTime = 5; a.state = 'flee';
 }
@@ -511,15 +640,15 @@ showNotification(`Попадание по ${a.type.toUpperCase()}! (-${ws.damage
 return;
 }
 }
-let tx = Math.floor(mx / TILE_SIZE); let ty = Math.floor(my / TILE_SIZE); let dx = mx - player.x; let dy = my - player.y; let dist = Math.sqrt(dx*dx + dy*dy); if (dist > TILE_SIZE * 2.5) { showNotification("Слишком далеко!"); return; } let key = getTileKey(tx, ty); let feature = worldModifications.get(key);
+let tx = Math.floor(mx / TILE_SIZE); let ty = Math.floor(my / TILE_SIZE); let dx = mx - player.x; let dy = my - player.y; let dist = Math.sqrt(dx*dx + dy*dy); if (dist > TILE_SIZE * 2.5) { SoundManager.play('error'); showNotification("Слишком далеко!"); return; } let key = getTileKey(tx, ty); let feature = worldModifications.get(key);
 if (feature) {
-if (feature.type === 'tree') { let tr = getActiveTool('AXE'); if (tr) { player.attackCooldown = 0.6; feature.health--; addTileShake(tx, ty); spawnHitParticles(tx*TILE_SIZE+32, ty*TILE_SIZE+32, 'tree'); if (feature.health <= 0) { player.score += 15; spawnBreakParticles(tx*TILE_SIZE+32, ty*TILE_SIZE+32, 'tree'); worldModifications.set(key, null); if (!isMultiplayerMode) { let ld = Math.floor(Math.random() * 3) + 1; spawnFloorItem(tx*TILE_SIZE + 32, ty*TILE_SIZE + 32, 'log', ld); if (Math.random() < 0.25) spawnFloorItem(tx*TILE_SIZE + 16, ty*TILE_SIZE + 48, 'stick', 1); } } rollToolBreak(tr); updateUiPanels(); } else showNotification("Выберите ТОПОР!"); }
-else if (feature.type === 'stone' || feature.type === 'coal_ore' || feature.type === 'copper_ore' || feature.type === 'tin_ore' || feature.type === 'iron_ore' || feature.type === 'sulfur_ore') { let tr = getActiveTool('PICKAXE'); if (tr) { player.attackCooldown = 0.6; feature.health--; addTileShake(tx, ty); spawnHitParticles(tx*TILE_SIZE+32, ty*TILE_SIZE+32, feature.type); if (feature.health <= 0) { player.score += 15; spawnBreakParticles(tx*TILE_SIZE+32, ty*TILE_SIZE+32, feature.type); worldModifications.set(key, null); if (!isMultiplayerMode) { let drop = 'rock'; if(feature.type === 'coal_ore') drop = 'coal'; else if(feature.type === 'copper_ore') drop = 'copper ore'; else if(feature.type === 'tin_ore') drop = 'tin ore'; else if(feature.type === 'iron_ore') drop = 'iron ore'; else if(feature.type === 'sulfur_ore') drop = 'sulfur'; spawnFloorItem(tx*TILE_SIZE + 32, ty*TILE_SIZE + 32, drop, feature.type === 'stone' ? 3 : 1); } } rollToolBreak(tr); updateUiPanels(); } else showNotification("Выберите КИРКУ!"); }
-else if (feature.type === 'placed_log' || feature.type === 'door' || feature.type === 'brick_wall' || feature.type === 'bed' || feature.type === 'loom') { let tr = getActiveTool('AXE'); if (tr) { player.attackCooldown = 0.6; feature.health--; addTileShake(tx, ty); spawnHitParticles(tx*TILE_SIZE+32, ty*TILE_SIZE+32, feature.type); if (feature.health <= 0) { spawnBreakParticles(tx*TILE_SIZE+32, ty*TILE_SIZE+32, feature.type); worldModifications.set(key, null); if (!isMultiplayerMode) { if(feature.type === 'placed_log') spawnFloorItem(tx * TILE_SIZE + 32, ty * TILE_SIZE + 32, 'log', 1); else if(feature.type === 'door') spawnFloorItem(tx * TILE_SIZE + 32, ty * TILE_SIZE + 32, 'log', 2); else if(feature.type === 'bed') spawnFloorItem(tx * TILE_SIZE + 32, ty * TILE_SIZE + 32, 'bed', 1); else if(feature.type === 'loom') spawnFloorItem(tx * TILE_SIZE + 32, ty * TILE_SIZE + 32, 'loom', 1); else if(feature.type === 'brick_wall') spawnFloorItem(tx * TILE_SIZE + 32, ty * TILE_SIZE + 32, 'brick wall', 1); } } rollToolBreak(tr); updateUiPanels(); } else showNotification("Выберите ТОПОР!"); }
-else if (feature.type === 'bush') { player.attackCooldown = 0.4; feature.health--; addTileShake(tx, ty); spawnHitParticles(tx*TILE_SIZE+32, ty*TILE_SIZE+32, 'bush'); if (feature.health <= 0) { player.score += 5; spawnBreakParticles(tx*TILE_SIZE+32, ty*TILE_SIZE+32, 'bush'); worldModifications.set(key, null); if (!isMultiplayerMode) { let sd = Math.floor(Math.random() * 3) + 1; spawnFloorItem(tx*TILE_SIZE + 32, ty*TILE_SIZE + 32, 'stick', sd); if (Math.random() < 0.20) spawnFloorItem(tx*TILE_SIZE + 32, ty*TILE_SIZE + 32, 'wildberries', 1); } } updateUiPanels(); }
-else if (feature.type === 'seaweed_plant') { player.attackCooldown = 0.4; feature.health--; addTileShake(tx, ty); spawnHitParticles(tx*TILE_SIZE+32, ty*TILE_SIZE+32, 'seaweed_plant'); if (feature.health <= 0) { player.score += 5; spawnBreakParticles(tx*TILE_SIZE+32, ty*TILE_SIZE+32, 'seaweed_plant'); worldModifications.set(key, null); if (!isMultiplayerMode) spawnFloorItem(tx*TILE_SIZE + 32, ty*TILE_SIZE + 32, 'seaweed', 1); } updateUiPanels(); }
+if (feature.type === 'tree') { let tr = getActiveTool('AXE'); if (tr) { player.attackCooldown = 0.6; triggerSwing(1); SoundManager.play('tree_hit'); feature.health--; addTileShake(tx, ty); spawnHitParticles(tx*TILE_SIZE+32, ty*TILE_SIZE+32, 'tree'); if (feature.health <= 0) { player.score += 15; spawnBreakParticles(tx*TILE_SIZE+32, ty*TILE_SIZE+32, 'tree'); SoundManager.play('tree_break'); setTileFeature(key, null); if (!isMultiplayerMode) { let ld = Math.floor(Math.random() * 3) + 1; spawnFloorItem(tx*TILE_SIZE + 32, ty*TILE_SIZE + 32, 'log', ld); if (Math.random() < 0.25) spawnFloorItem(tx*TILE_SIZE + 16, ty*TILE_SIZE + 48, 'stick', 1); } } rollToolBreak(tr); requestUiUpdate(); } else { SoundManager.play('error'); showNotification("Выберите ТОПОР!"); } }
+else if (feature.type === 'stone' || feature.type === 'coal_ore' || feature.type === 'copper_ore' || feature.type === 'tin_ore' || feature.type === 'iron_ore' || feature.type === 'sulfur_ore') { let tr = getActiveTool('PICKAXE'); if (tr) { player.attackCooldown = 0.6; triggerSwing(1); SoundManager.play('stone_hit'); feature.health--; addTileShake(tx, ty); spawnHitParticles(tx*TILE_SIZE+32, ty*TILE_SIZE+32, feature.type); if (feature.health <= 0) { player.score += 15; spawnBreakParticles(tx*TILE_SIZE+32, ty*TILE_SIZE+32, feature.type); SoundManager.play('stone_break'); setTileFeature(key, null); if (!isMultiplayerMode) { let drop = 'rock'; if(feature.type === 'coal_ore') drop = 'coal'; else if(feature.type === 'copper_ore') drop = 'copper ore'; else if(feature.type === 'tin_ore') drop = 'tin ore'; else if(feature.type === 'iron_ore') drop = 'iron ore'; else if(feature.type === 'sulfur_ore') drop = 'sulfur'; spawnFloorItem(tx*TILE_SIZE + 32, ty*TILE_SIZE + 32, drop, feature.type === 'stone' ? 3 : 1); } } rollToolBreak(tr); requestUiUpdate(); } else { SoundManager.play('error'); showNotification("Выберите КИРКУ!"); } }
+else if (feature.type === 'placed_log' || feature.type === 'door' || feature.type === 'brick_wall' || feature.type === 'bed' || feature.type === 'loom') { let tr = getActiveTool('AXE'); if (tr) { player.attackCooldown = 0.6; triggerSwing(1); SoundManager.play(feature.type === 'brick_wall' ? 'stone_hit' : 'tree_hit'); feature.health--; addTileShake(tx, ty); spawnHitParticles(tx*TILE_SIZE+32, ty*TILE_SIZE+32, feature.type); if (feature.health <= 0) { spawnBreakParticles(tx*TILE_SIZE+32, ty*TILE_SIZE+32, feature.type); SoundManager.play(feature.type === 'brick_wall' ? 'stone_break' : 'tree_break'); setTileFeature(key, null); if (!isMultiplayerMode) { if(feature.type === 'placed_log') spawnFloorItem(tx * TILE_SIZE + 32, ty * TILE_SIZE + 32, 'log', 1); else if(feature.type === 'door') spawnFloorItem(tx * TILE_SIZE + 32, ty * TILE_SIZE + 32, 'log', 2); else if(feature.type === 'bed') spawnFloorItem(tx * TILE_SIZE + 32, ty * TILE_SIZE + 32, 'bed', 1); else if(feature.type === 'loom') spawnFloorItem(tx * TILE_SIZE + 32, ty * TILE_SIZE + 32, 'loom', 1); else if(feature.type === 'brick_wall') spawnFloorItem(tx * TILE_SIZE + 32, ty * TILE_SIZE + 32, 'brick wall', 1); } } rollToolBreak(tr); requestUiUpdate(); } else { SoundManager.play('error'); showNotification("Выберите ТОПОР!"); } }
+else if (feature.type === 'bush') { player.attackCooldown = 0.4; triggerSwing(1); SoundManager.play('bush_hit'); feature.health--; addTileShake(tx, ty); spawnHitParticles(tx*TILE_SIZE+32, ty*TILE_SIZE+32, 'bush'); if (feature.health <= 0) { player.score += 5; spawnBreakParticles(tx*TILE_SIZE+32, ty*TILE_SIZE+32, 'bush'); setTileFeature(key, null); if (!isMultiplayerMode) { let sd = Math.floor(Math.random() * 3) + 1; spawnFloorItem(tx*TILE_SIZE + 32, ty*TILE_SIZE + 32, 'stick', sd); if (Math.random() < 0.20) spawnFloorItem(tx*TILE_SIZE + 32, ty*TILE_SIZE + 32, 'wildberries', 1); } } requestUiUpdate(); }
+else if (feature.type === 'seaweed_plant') { player.attackCooldown = 0.4; triggerSwing(1); SoundManager.play('bush_hit'); feature.health--; addTileShake(tx, ty); spawnHitParticles(tx*TILE_SIZE+32, ty*TILE_SIZE+32, 'seaweed_plant'); if (feature.health <= 0) { player.score += 5; spawnBreakParticles(tx*TILE_SIZE+32, ty*TILE_SIZE+32, 'seaweed_plant'); setTileFeature(key, null); if (!isMultiplayerMode) spawnFloorItem(tx*TILE_SIZE + 32, ty*TILE_SIZE + 32, 'seaweed', 1); } requestUiUpdate(); }
 } else {
-let tr = getActiveTool('SHOVEL'); if (tr) { player.attackCooldown = 0.6; let bio = getBiomeAt(tx, ty); if (player.currentDimension === 'surface' && bio === BIOMES.BEACH_SAND) { if (!isMultiplayerMode) spawnFloorItem(mx, my, 'sand', 1); spawnHitParticles(mx, my, 'sulfur_ore'); rollToolBreak(tr); } else if (player.currentDimension === 'surface' && bio === BIOMES.BEACH_CLAY) { if (!isMultiplayerMode) spawnFloorItem(mx, my, 'clay', 1); spawnHitParticles(mx, my, 'iron_ore'); rollToolBreak(tr); } else if (player.currentDimension === 'surface' && bio !== BIOMES.SEA && bio !== BIOMES.RIVER && bio !== BIOMES.DESERT) { if (!isMultiplayerMode) spawnFloorItem(mx, my, 'mud', 1); spawnHitParticles(mx, my, 'placed_log'); rollToolBreak(tr); } else showNotification("Здесь нет грязи!"); }
+let tr = getActiveTool('SHOVEL'); if (tr) { player.attackCooldown = 0.6; triggerSwing(1); SoundManager.play('dig'); let bio = getBiomeAt(tx, ty); if (player.currentDimension === 'surface' && bio === BIOMES.BEACH_SAND) { if (!isMultiplayerMode) spawnFloorItem(mx, my, 'sand', 1); spawnHitParticles(mx, my, 'sulfur_ore'); rollToolBreak(tr); } else if (player.currentDimension === 'surface' && bio === BIOMES.BEACH_CLAY) { if (!isMultiplayerMode) spawnFloorItem(mx, my, 'clay', 1); spawnHitParticles(mx, my, 'iron_ore'); rollToolBreak(tr); } else if (player.currentDimension === 'surface' && bio !== BIOMES.SEA && bio !== BIOMES.RIVER && bio !== BIOMES.DESERT) { if (!isMultiplayerMode) spawnFloorItem(mx, my, 'mud', 1); spawnHitParticles(mx, my, 'placed_log'); rollToolBreak(tr); } else showNotification("Здесь нет грязи!"); }
 }
 }
 function performRightClick(mx, my) {
@@ -542,7 +671,8 @@ socket.emit('give_item', { targetId: id, item: { name: activeItem.name, count: 1
 activeItem.count--;
 if (activeItem.count <= 0) hotbar[activeHotbarIndex] = null;
 }
-updateUiPanels();
+triggerSwing(0.4); SoundManager.play('click');
+requestUiUpdate();
 showNotification(`Предмет передан игроку ${rp.nickname || ''}`);
 }
 return;
@@ -550,35 +680,45 @@ return;
 }
 }
 let tx = Math.floor(mx / TILE_SIZE); let ty = Math.floor(my / TILE_SIZE); let key = getTileKey(tx, ty); let cb = getBiomeAt(tx, ty); let ef = worldModifications.get(key);
-if (ef && ef.type === 'bed') { player.spawnX = tx * TILE_SIZE + 32; player.spawnY = ty * TILE_SIZE + 32; showNotification("Точка возрождения установлена!"); updateUiPanels(); return; }
+if (ef && ef.type === 'bed') { player.spawnX = tx * TILE_SIZE + 32; player.spawnY = ty * TILE_SIZE + 32; SoundManager.play('click'); showNotification("Точка возрождения установлена!"); requestUiUpdate(); return; }
 let ai = hotbar[activeHotbarIndex];
 if (ai && ['log', 'primitive furnace', 'raft', 'door', 'brick wall', 'brick furnace', 'loom', 'bed'].includes(ai.name.toLowerCase())) {
-if (player.currentDimension === 'cave') { showNotification("Слишком плотно!"); return; } let dx = mx - player.x; let dy = my - player.y; if (Math.sqrt(dx*dx + dy*dy) > TILE_SIZE * 3) { showNotification("Слишком далеко!"); return; } let nm = ai.name.toLowerCase();
-if (nm === 'raft') { if (cb === BIOMES.SEA || cb === BIOMES.RIVER) { if (!player.onRaft) { player.onRaft = true; ai.count--; if (ai.count <= 0) hotbar[activeHotbarIndex] = null; updateUiPanels(); showNotification("Плот спущен!"); } else showNotification("Вы уже на плоту!"); return; } else showNotification("Плот нужен на воде!"); return; }
+if (player.currentDimension === 'cave') { SoundManager.play('error'); showNotification("Слишком плотно!"); return; } let dx = mx - player.x; let dy = my - player.y; if (Math.sqrt(dx*dx + dy*dy) > TILE_SIZE * 3) { SoundManager.play('error'); showNotification("Слишком далеко!"); return; } let nm = ai.name.toLowerCase();
+if (nm === 'raft') { if (cb === BIOMES.SEA || cb === BIOMES.RIVER) { if (!player.onRaft) { player.onRaft = true; ai.count--; if (ai.count <= 0) hotbar[activeHotbarIndex] = null; triggerSwing(0.7); SoundManager.play('place'); requestUiUpdate(); showNotification("Плот спущен!"); } else showNotification("Вы уже на плоту!"); return; } else { SoundManager.play('error'); showNotification("Плот нужен на воде!"); return; } }
 if (!ef) {
-if (nm === 'log') worldModifications.set(key, { type: 'placed_log', health: 3 }); else if (nm === 'door') worldModifications.set(key, { type: 'door', health: 2 }); else if (nm === 'brick wall') worldModifications.set(key, { type: 'brick_wall', health: 5 }); else if (nm === 'primitive furnace') worldModifications.set(key, { type: 'furnace', cookProgress: 0, itemSlot: null, fuelSlot: null, resultSlot: null }); else if (nm === 'brick furnace') worldModifications.set(key, { type: 'brick_furnace', cookProgress: [0,0,0], itemSlots: [null,null,null], fuelSlot: null, resultSlots: [null,null,null] }); else if (nm === 'loom') worldModifications.set(key, { type: 'loom', itemSlot: null, resultSlot: null, progress: 0, health: 3 }); else if (nm === 'bed') worldModifications.set(key, { type: 'bed', health: 2 });
-ai.count--; if (ai.count <= 0) hotbar[activeHotbarIndex] = null; updateUiPanels(); showNotification(`Построено: ${nm.toUpperCase()}!`); return;
-} else { showNotification("Место занято!"); return; }
+if (nm === 'log') setTileFeature(key, { type: 'placed_log', health: 3 }); else if (nm === 'door') setTileFeature(key, { type: 'door', health: 2 }); else if (nm === 'brick wall') setTileFeature(key, { type: 'brick_wall', health: 5 }); else if (nm === 'primitive furnace') setTileFeature(key, { type: 'furnace', cookProgress: 0, itemSlot: null, fuelSlot: null, resultSlot: null }); else if (nm === 'brick furnace') setTileFeature(key, { type: 'brick_furnace', cookProgress: [0,0,0], itemSlots: [null,null,null], fuelSlot: null, resultSlots: [null,null,null] }); else if (nm === 'loom') setTileFeature(key, { type: 'loom', itemSlot: null, resultSlot: null, progress: 0, health: 3 }); else if (nm === 'bed') setTileFeature(key, { type: 'bed', health: 2 });
+ai.count--; if (ai.count <= 0) hotbar[activeHotbarIndex] = null;
+triggerSwing(0.7); SoundManager.play('place');
+requestUiUpdate(); showNotification(`Построено: ${nm.toUpperCase()}!`); return;
+} else { SoundManager.play('error'); showNotification("Место занято!"); return; }
 }
 let ptx = Math.floor(player.x / TILE_SIZE); let pty = Math.floor(player.y / TILE_SIZE); let sb = getBiomeAt(ptx, pty); let iw = (player.currentDimension === 'surface' && sb.drinkable);
-if (ai) { let nm = ai.name.toLowerCase(); if (nm === 'fired clay vessel' && iw) { ai.count--; if (ai.count <= 0) hotbar[activeHotbarIndex] = null; addItemToInventory('FIRED CLAY VESSEL WITH WATER', 1); updateUiPanels(); showNotification("Сосуд наполнен!"); return; } if (nm === 'fired clay vessel with water') { if (player.thirst < player.maxThirst) { player.thirst = Math.min(player.maxThirst, player.thirst + 50); showNotification("Вы выпили воду!"); ai.count--; if (ai.count <= 0) hotbar[activeHotbarIndex] = null; addItemToInventory('FIRED CLAY VESSEL', 1); updateUiPanels(); return; } else { showNotification("Вы не хотите пить!"); return; } } if (nm === 'bottle of juice') { if (player.thirst < player.maxThirst) { player.thirst = Math.min(player.maxThirst, player.thirst + 35); showNotification("Вы выпили сок!"); ai.count--; if (ai.count <= 0) hotbar[activeHotbarIndex] = null; addItemToInventory('BOTTLE', 1); updateUiPanels(); return; } else { showNotification("Вы не хотите пить!"); return; } } }
-if (iw) { if (player.thirst < player.maxThirst) { player.thirst = Math.min(player.maxThirst, player.thirst + 35); showNotification("Вы напились!"); return; } }
-if (ai && player.hunger < player.maxHunger) { let fn = ai.name.toLowerCase(); if (['apple', 'wildberries', 'carrot', 'meat', 'cooked meat', 'seaweed'].includes(fn)) { let dn = ai.name.toUpperCase(); ai.count--; if (ai.count <= 0) hotbar[activeHotbarIndex] = null; let hg = 25, hpg = 8; if (fn === 'wildberries') { hg = 15; hpg = 5; } if (fn === 'carrot') { hg = 20; hpg = 10; } if (fn === 'meat') { hg = 15; hpg = -10; } if (fn === 'cooked meat') { hg = 50; hpg = 20; } if (fn === 'seaweed') { hg = 10; hpg = 5; } player.hunger = Math.min(player.maxHunger, player.hunger + hg); player.health = Math.max(0, Math.min(player.maxHealth, player.health + hpg)); updateUiPanels(); showNotification(`Съедено: ${dn}!`); return; } }
+if (ai) { let nm = ai.name.toLowerCase(); if (nm === 'fired clay vessel' && iw) { ai.count--; if (ai.count <= 0) hotbar[activeHotbarIndex] = null; addItemToInventory('FIRED CLAY VESSEL WITH WATER', 1); triggerSwing(0.5); SoundManager.play('drink'); requestUiUpdate(); showNotification("Сосуд наполнен!"); return; } if (nm === 'fired clay vessel with water') { if (player.thirst < player.maxThirst) { player.thirst = Math.min(player.maxThirst, player.thirst + 50); showNotification("Вы выпили воду!"); ai.count--; if (ai.count <= 0) hotbar[activeHotbarIndex] = null; addItemToInventory('FIRED CLAY VESSEL', 1); triggerSwing(0.5); SoundManager.play('drink'); requestUiUpdate(); return; } else { showNotification("Вы не хотите пить!"); return; } } if (nm === 'bottle of juice') { if (player.thirst < player.maxThirst) { player.thirst = Math.min(player.maxThirst, player.thirst + 35); showNotification("Вы выпили сок!"); ai.count--; if (ai.count <= 0) hotbar[activeHotbarIndex] = null; addItemToInventory('BOTTLE', 1); triggerSwing(0.5); SoundManager.play('drink'); requestUiUpdate(); return; } else { showNotification("Вы не хотите пить!"); return; } } }
+if (iw) { if (player.thirst < player.maxThirst) { player.thirst = Math.min(player.maxThirst, player.thirst + 35); triggerSwing(0.5); SoundManager.play('drink'); showNotification("Вы напились!"); return; } }
+if (ai && player.hunger < player.maxHunger) { let fn = ai.name.toLowerCase(); if (['apple', 'wildberries', 'carrot', 'meat', 'cooked meat', 'seaweed'].includes(fn)) { let dn = ai.name.toUpperCase(); ai.count--; if (ai.count <= 0) hotbar[activeHotbarIndex] = null; let hg = 25, hpg = 8; if (fn === 'wildberries') { hg = 15; hpg = 5; } if (fn === 'carrot') { hg = 20; hpg = 10; } if (fn === 'meat') { hg = 15; hpg = -10; } if (fn === 'cooked meat') { hg = 50; hpg = 20; } if (fn === 'seaweed') { hg = 10; hpg = 5; } player.hunger = Math.min(player.maxHunger, player.hunger + hg); player.health = Math.max(0, Math.min(player.maxHealth, player.health + hpg)); triggerSwing(0.5); SoundManager.play('eat'); requestUiUpdate(); showNotification(`Съедено: ${dn}!`); return; } }
 }
 function saveGame() { if (!currentSaveId) currentSaveId = 'save_' + Date.now(); const sd = { noiseSeed: NOISE_SEED, player: { ...player }, inventory: inventory.map(i => i ? { ...i } : null), hotbar: hotbar.map(i => i ? { ...i } : null), floorItems: floorItems.map(i => ({ ...i })), animals: animals.map(a => ({ ...a })), worldModifications: Array.from(worldModifications.entries()) }; try { localStorage.setItem('survivalSave_' + currentSaveId, JSON.stringify(sd)); let r = JSON.parse(localStorage.getItem('survivalSavesRegistry') || '[]'); const ei = r.findIndex(s => s.id === currentSaveId); const m = { id: currentSaveId, seed: NOISE_SEED, date: new Date().toLocaleString(), score: Math.floor(player.score) }; if (ei >= 0) r[ei] = m; else r.push(m); localStorage.setItem('survivalSavesRegistry', JSON.stringify(r)); showNotification('Игра сохранена!'); } catch (e) { showNotification("Ошибка!"); } }
-function loadGame(sid) { const raw = localStorage.getItem('survivalSave_' + sid); if (!raw) return showNotification('Сохранение повреждено!'); const d = JSON.parse(raw); currentSaveId = sid; if (d.noiseSeed !== undefined) NOISE_SEED = d.noiseSeed; Object.assign(player, d.player); if (!player.spawnX) { player.spawnX = 32; player.spawnY = 32; } inventory = d.inventory.map(i => i ? { ...i } : null); hotbar = d.hotbar.map(i => i ? { ...i } : null); floorItems = d.floorItems.map(i => ({ ...i })); animals = d.animals.map(a => ({ ...a })); worldModifications = new Map(d.worldModifications); window.worldModifications = worldModifications; document.getElementById('starterMenu').style.display = 'none'; gameState = 'play'; mobileModeEnabled = document.getElementById('mobileModeCheckbox').checked; if (mobileModeEnabled) { document.body.classList.add('mobile-device'); document.getElementById('desktopControlsGuide').style.display = 'none'; } else { document.body.classList.remove('mobile-device'); document.getElementById('desktopControlsGuide').style.display = 'block'; } document.getElementById('mobileJoystickContainer').style.display = mobileModeEnabled ? 'block' : 'none'; document.getElementById('mobileActionContainer').style.display = mobileModeEnabled ? 'flex' : 'none'; showNotification('Игра загружена!'); }
+function loadGame(sid) { const raw = localStorage.getItem('survivalSave_' + sid); if (!raw) return showNotification('Сохранение повреждено!'); const d = JSON.parse(raw); currentSaveId = sid; if (d.noiseSeed !== undefined) NOISE_SEED = d.noiseSeed; Object.assign(player, d.player); if (!player.spawnX) { player.spawnX = 32; player.spawnY = 32; } inventory = d.inventory.map(i => i ? { ...i } : null); hotbar = d.hotbar.map(i => i ? { ...i } : null); floorItems = d.floorItems.map(i => ({ ...i })); animals = d.animals.map(a => ({ ...a })); projectiles = []; particles = []; tileShakes.clear(); pickupAnims = []; swingTimer = 0; worldModifications = new Map(d.worldModifications); window.worldModifications = worldModifications; machineKeys.clear(); for (const [k, v] of worldModifications) registerMachine(k, v); document.getElementById('starterMenu').style.display = 'none'; gameState = 'play'; mobileModeEnabled = document.getElementById('mobileModeCheckbox').checked; if (mobileModeEnabled) { document.body.classList.add('mobile-device'); document.getElementById('desktopControlsGuide').style.display = 'none'; } else { document.body.classList.remove('mobile-device'); document.getElementById('desktopControlsGuide').style.display = 'block'; } document.getElementById('mobileJoystickContainer').style.display = mobileModeEnabled ? 'block' : 'none'; document.getElementById('mobileActionContainer').style.display = mobileModeEnabled ? 'flex' : 'none'; requestUiUpdate(); showNotification('Игра загружена!'); }
 function deleteSave(sid) { localStorage.removeItem('survivalSave_' + sid); let r = JSON.parse(localStorage.getItem('survivalSavesRegistry') || '[]'); r = r.filter(s => s.id !== sid); localStorage.setItem('survivalSavesRegistry', JSON.stringify(r)); updateSavesPanel(); }
 function updateSavesPanel() { const c = document.getElementById('savesListContainer'); c.innerHTML = ''; const r = JSON.parse(localStorage.getItem('survivalSavesRegistry') || '[]'); if (r.length === 0) { c.innerHTML = '<div style="text-align:center; color:#888;">Нет сохранений</div>'; return; } r.sort((a,b) => new Date(b.date) - new Date(a.date)); r.forEach(s => { const d = document.createElement('div'); d.className = 'save-item'; const i = document.createElement('div'); i.className = 'save-info'; i.innerHTML = `<b>Сид:</b> ${s.seed}<br><b>Дата:</b> ${s.date}<br><b>Очки:</b> ${s.score || 0}`; const b = document.createElement('div'); b.className = 'save-actions'; const lb = document.createElement('button'); lb.className = 'save-btn load-btn'; lb.innerText = 'Играть'; lb.onclick = () => loadGame(s.id); const db = document.createElement('button'); db.className = 'save-btn delete-btn'; db.innerText = 'Удалить'; db.onclick = () => { if(confirm('Удалить?')) deleteSave(s.id); }; b.appendChild(lb); b.appendChild(db); d.appendChild(i); d.appendChild(b); c.appendChild(d); }); }
-function returnToMainMenu() { saveGame(); gameState = 'menu'; document.getElementById('starterMenu').style.display = 'flex'; document.getElementById('menuPrimaryPanel').style.display = 'flex'; document.getElementById('menuMultiplayerPanel').style.display = 'none'; document.getElementById('menuSettingsPanel').style.display = 'none'; document.getElementById('menuSavesPanel').style.display = 'none'; document.getElementById('unifiedMenu').style.display = 'none'; document.getElementById('furnaceMenu').style.display = 'none'; document.getElementById('brickFurnaceMenu').style.display = 'none'; document.getElementById('loomMenu').style.display = 'none'; document.getElementById('devMenu').style.display = 'none'; document.body.classList.remove('mobile-device'); }
-function toggleDevMenu() { const m = document.getElementById('devMenu'); if (m.style.display === 'flex') m.style.display = 'none'; else { m.style.display = 'flex'; setDevTab('res'); } }
-function setDevTab(tab) { const c = document.getElementById('devMenuContent'); c.innerHTML = ''; document.querySelectorAll('.dev-tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab)); const cb = (n, tc, tn, oc) => { let b = document.createElement('button'); b.className = 'dev-item-btn'; let t = TextureManager.get(tc, tn); if (t) { b.classList.add('has-texture'); b.style.backgroundImage = `url('${t.src}')`; let te = document.createElement('span'); te.className = 'item-text'; te.innerText = n; b.appendChild(te); } else { b.innerText = n; } b.onclick = oc; c.appendChild(b); }; if (tab === 'res') { [...DEV_RESOURCES].sort((a, b) => a.localeCompare(b)).forEach(r => { let it = r.includes('axe') || r.includes('pickaxe') || r.includes('shovel') || r.includes('spear') || r.includes('knife') || r.includes('bow') || r.includes('musket') || r.includes('spindle'); cb(r.toUpperCase(), 'items', r.toLowerCase().replace(/ /g, '_'), () => { addItemToInventory(r.toUpperCase(), it ? 1 : 100); showNotification(`Добавлено: ${r.toUpperCase()}`); }); }); } else if (tab === 'obj') { [...DEV_OBJECTS].sort((a, b) => a.name.localeCompare(b.name)).forEach(o => { cb(o.name.toUpperCase(), 'objects', o.type, () => { let ptx = Math.floor(player.x / TILE_SIZE); let pty = Math.floor(player.y / TILE_SIZE); let key = getTileKey(ptx, pty); if (o.type === 'cave_entrance') { worldModifications.set(getTileKey(ptx, pty, 'surface'), { type: 'cave_entrance' }); worldModifications.set(getTileKey(ptx, pty, 'cave'), { type: 'cave_entrance' }); } else { worldModifications.set(key, { type: o.type, ...o.data }); } showNotification(`Заспавнено: ${o.name}`); }); }); } else if (tab === 'anm') { [...DEV_ANIMALS].sort((a, b) => a.localeCompare(b)).forEach(a => { cb(a.toUpperCase(), 'animals', a, () => { spawnAnimalGroup(Math.floor(player.x / TILE_SIZE), Math.floor(player.y / TILE_SIZE), a, 1, player.currentDimension); showNotification(`Заспавнено: ${a.toUpperCase()}`); }); }); } }
+function returnToMainMenu() { saveGame(); gameState = 'menu'; document.getElementById('starterMenu').style.display = 'flex'; document.getElementById('menuPrimaryPanel').style.display = 'flex'; document.getElementById('menuMultiplayerPanel').style.display = 'none'; document.getElementById('menuSettingsPanel').style.display = 'none'; document.getElementById('menuSavesPanel').style.display = 'none'; document.getElementById('unifiedMenu').style.display = 'none'; document.getElementById('furnaceMenu').style.display = 'none'; document.getElementById('brickFurnaceMenu').style.display = 'none'; document.getElementById('loomMenu').style.display = 'none'; document.getElementById('devMenu').style.display = 'none'; document.getElementById('scoreShopMenu').style.display = 'none'; document.body.classList.remove('mobile-device'); }
+function toggleDevMenu() { SoundManager.play('click'); const m = document.getElementById('devMenu'); if (m.style.display === 'flex') m.style.display = 'none'; else { m.style.display = 'flex'; setDevTab('res'); } }
+function setDevTab(tab) { const c = document.getElementById('devMenuContent'); c.innerHTML = ''; document.querySelectorAll('.dev-tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab)); const cb = (n, tc, tn, oc) => { let b = document.createElement('button'); b.className = 'dev-item-btn'; let t = TextureManager.get(tc, tn); if (t) { b.classList.add('has-texture'); b.style.backgroundImage = `url('${t.src}')`; let te = document.createElement('span'); te.className = 'item-text'; te.innerText = n; b.appendChild(te); } else { b.innerText = n; } b.onclick = oc; c.appendChild(b); }; if (tab === 'res') { [...DEV_RESOURCES].sort((a, b) => a.localeCompare(b)).forEach(r => { let it = r.includes('axe') || r.includes('pickaxe') || r.includes('shovel') || r.includes('spear') || r.includes('knife') || r.includes('bow') || r.includes('musket') || r.includes('spindle'); cb(r.toUpperCase(), 'items', r.toLowerCase().replace(/ /g, '_'), () => { addItemToInventory(r.toUpperCase(), it ? 1 : 100); showNotification(`Добавлено: ${r.toUpperCase()}`); }); }); } else if (tab === 'obj') { [...DEV_OBJECTS].sort((a, b) => a.name.localeCompare(b.name)).forEach(o => { cb(o.name.toUpperCase(), 'objects', o.type, () => { let ptx = Math.floor(player.x / TILE_SIZE); let pty = Math.floor(player.y / TILE_SIZE); let key = getTileKey(ptx, pty); if (o.type === 'cave_entrance') { setTileFeature(getTileKey(ptx, pty, 'surface'), { type: 'cave_entrance' }); setTileFeature(getTileKey(ptx, pty, 'cave'), { type: 'cave_entrance' }); } else { setTileFeature(key, { type: o.type, ...o.data }); } showNotification(`Заспавнено: ${o.name}`); }); }); } else if (tab === 'anm') { [...DEV_ANIMALS].sort((a, b) => a.localeCompare(b)).forEach(a => { cb(a.toUpperCase(), 'animals', a, () => { spawnAnimalGroup(Math.floor(player.x / TILE_SIZE), Math.floor(player.y / TILE_SIZE), a, 1, player.currentDimension); showNotification(`Заспавнено: ${a.toUpperCase()}`); }); }); } }
 document.getElementById('closeDevMenuBtn').addEventListener('click', () => document.getElementById('devMenu').style.display = 'none');
 document.querySelectorAll('.dev-tab-btn').forEach(b => b.addEventListener('click', () => setDevTab(b.dataset.tab)));
-window.addEventListener('keydown', (e) => { if (gameState !== 'play') return; const c = e.code; if (['KeyW', 'KeyA', 'KeyS', 'KeyD'].includes(c)) inputs[c] = true; if (c.startsWith('Digit')) { let n = parseInt(c.replace('Digit', '')); if (n >= 1 && n <= 9) { activeHotbarIndex = n - 1; updateUiPanels(); } } if (c === 'KeyE' || c === 'KeyT') toggleInventoryMenu(); if (c === 'KeyR') triggerRaftDismountAction(); if (c === 'Backquote') { e.preventDefault(); toggleDevMenu(); } if (c === 'Escape') { if (document.getElementById('devMenu').style.display === 'flex') { document.getElementById('devMenu').style.display = 'none'; return; } returnToMainMenu(); } });
+window.addEventListener('keydown', (e) => { if (gameState !== 'play') return; const c = e.code; if (['KeyW', 'KeyA', 'KeyS', 'KeyD'].includes(c)) inputs[c] = true; if (c.startsWith('Digit')) { let n = parseInt(c.replace('Digit', '')); if (n >= 1 && n <= 9) { activeHotbarIndex = n - 1; SoundManager.play('switch'); requestUiUpdate(); } } if (c === 'KeyE' || c === 'KeyT') toggleInventoryMenu(); if (c === 'KeyR') triggerRaftDismountAction(); if (c === 'Backquote') { e.preventDefault(); toggleDevMenu(); } if (c === 'Escape') { if (document.getElementById('devMenu').style.display === 'flex') { document.getElementById('devMenu').style.display = 'none'; return; } returnToMainMenu(); } });
 window.addEventListener('keyup', (e) => { const c = e.code; if (['KeyW', 'KeyA', 'KeyS', 'KeyD'].includes(c)) inputs[c] = false; });
+// НОВОЕ: переключение активного слота хотбара колёсиком мыши
+window.addEventListener('wheel', (e) => {
+if (gameState !== 'play' || e.target !== canvas) return;
+if (document.getElementById('unifiedMenu').style.display === 'block' || document.getElementById('devMenu').style.display === 'flex' || document.getElementById('scoreShopMenu').style.display === 'block') return;
+activeHotbarIndex = (activeHotbarIndex + (e.deltaY > 0 ? 1 : 8)) % 9;
+SoundManager.play('switch');
+requestUiUpdate();
+}, { passive: true });
 window.addEventListener('mousemove', (e) => { if (gameState !== 'play') return; mouseScreenPos.x = e.clientX; mouseScreenPos.y = e.clientY; mouseWorldPos.x = e.clientX + camX; mouseWorldPos.y = e.clientY + camY; updateFloatingCursorElement(); });
-function toggleInventoryMenu() { const m = document.getElementById('unifiedMenu'); m.style.display = m.style.display === 'block' ? 'none' : 'block'; updateUiPanels(); }
-function triggerRaftDismountAction() { if (player.onRaft) { player.onRaft = false; addItemToInventory('RAFT', 1); showNotification("Плот сложен!"); } }
+function toggleInventoryMenu() { SoundManager.play('click'); const m = document.getElementById('unifiedMenu'); m.style.display = m.style.display === 'block' ? 'none' : 'block'; requestUiUpdate(); }
+function triggerRaftDismountAction() { if (player.onRaft) { player.onRaft = false; addItemToInventory('RAFT', 1); SoundManager.play('place'); showNotification("Плот сложен!"); } }
 window.addEventListener('click', (e) => { if (gameState !== 'play') return; if (e.target !== canvas) return; if (document.getElementById('unifiedMenu').style.display === 'block' || document.getElementById('devMenu').style.display === 'flex') return; if (document.getElementById('scoreShopMenu').style.display === 'block') return; if (e.clientX < 280 && e.clientY < 240) return; if (e.clientY > window.innerHeight - 100) return; performLeftClick(e.clientX + camX, e.clientY + camY); });
 window.addEventListener('contextmenu', (e) => { e.preventDefault(); if (gameState !== 'play') return; if (e.target !== canvas) return; if (document.getElementById('unifiedMenu').style.display === 'block' || document.getElementById('devMenu').style.display === 'flex') return; performRightClick(e.clientX + camX, e.clientY + camY); });
 const jc = document.getElementById('mobileJoystickContainer'); const jk = document.getElementById('mobileJoystickKnob');
@@ -593,40 +733,55 @@ document.getElementById('mobileActionDev').addEventListener('touchstart', (e) =>
 let ctsX = 0; let ctsY = 0; let ltt = 0; let tto = null; let ltx = 0; let lty = 0;
 canvas.addEventListener('touchstart', (e) => { if (!mobileModeEnabled || gameState !== 'play') return; if (e.target === jc || e.target === jk || e.target.closest('#mobileActionContainer')) return; let t = e.touches[0]; ctsX = t.clientX; ctsY = t.clientY; mouseScreenPos.x = t.clientX; mouseScreenPos.y = t.clientY; mouseWorldPos.x = t.clientX + camX; mouseWorldPos.y = t.clientY + camY; });
 canvas.addEventListener('touchend', (e) => { if (!mobileModeEnabled || gameState !== 'play') return; if (e.target === jc || e.target === jk || e.target.closest('#mobileActionContainer')) return; if (document.getElementById('unifiedMenu').style.display === 'block' || document.getElementById('devMenu').style.display === 'flex') return; let t = e.changedTouches[0]; let cx = t.clientX; let cy = t.clientY; if (cx < 200 && cy < 140) return; if (cy > window.innerHeight - 80) return; if (Math.hypot(cx - ctsX, cy - ctsY) > 22) return; let now = performance.now(); let ts = now - ltt; if (ts < 300 && Math.hypot(cx - ltx, cy - lty) < 40) { clearTimeout(tto); tto = null; performRightClick(cx + camX, cy + camY); ltt = 0; } else { ltt = now; ltx = cx; lty = cy; clearTimeout(tto); tto = setTimeout(() => { performLeftClick(cx + camX, cy + camY); tto = null; }, 250); } });
-document.getElementById('startBtn').addEventListener('click', () => { if (!isMultiplayerMode) { let sv = document.getElementById('seedInput').value.trim(); if (sv !== '') NOISE_SEED = stringToSeed(sv); else NOISE_SEED = Math.random() * 100000; } currentSaveId = null; worldModifications.clear(); floorItems = []; animals = []; projectiles = []; particles = []; tileShakes.clear(); pickupAnims = []; inventory = Array(27).fill(null); craftingGrid = Array(9).fill(null); hotbar = Array(9).fill(null); craftOutput = null; heldItem = null; player.x = 0; player.y = 0; player.speed = 5; player.angle = 0; player.health = 100; player.maxHealth = 100; player.hunger = 100; player.maxHunger = 100; player.thirst = 100; player.maxThirst = 100; player.onRaft = false; player.currentDimension = 'surface'; player.teleportCooldown = 0; player.score = 0; player.collectRadius = 90; player.radiusCost = 50; player.speedCost = 75; player.hpCost = 100; player.attackCooldown = 0; player.waterFillCooldown = 0; player.spawnX = 32; player.spawnY = 32; if (!isMultiplayerMode) { spawnFloorItem(40, 40, 'stick', 2); spawnFloorItem(-80, 60, 'rock', 2); spawnFloorItem(60, -40, 'apple', 2); } camX = 0; camY = 0; document.getElementById('starterMenu').style.display = 'none'; gameState = 'play'; mobileModeEnabled = document.getElementById('mobileModeCheckbox').checked; if (mobileModeEnabled) { document.body.classList.add('mobile-device'); document.getElementById('desktopControlsGuide').style.display = 'none'; } else { document.body.classList.remove('mobile-device'); document.getElementById('desktopControlsGuide').style.display = 'block'; } document.getElementById('mobileJoystickContainer').style.display = mobileModeEnabled ? 'block' : 'none'; document.getElementById('mobileActionContainer').style.display = mobileModeEnabled ? 'flex' : 'none'; });
+document.getElementById('startBtn').addEventListener('click', () => { if (!isMultiplayerMode) { let sv = document.getElementById('seedInput').value.trim(); if (sv !== '') NOISE_SEED = stringToSeed(sv); else NOISE_SEED = Math.random() * 100000; } currentSaveId = null; worldModifications.clear(); machineKeys.clear(); floorItems = []; animals = []; projectiles = []; particles = []; tileShakes.clear(); pickupAnims = []; swingTimer = 0; swingSeq = 0; inventory = Array(27).fill(null); craftingGrid = Array(9).fill(null); hotbar = Array(9).fill(null); craftOutput = null; heldItem = null; player.x = 0; player.y = 0; player.speed = 5; player.angle = 0; player.health = 100; player.maxHealth = 100; player.hunger = 100; player.maxHunger = 100; player.thirst = 100; player.maxThirst = 100; player.onRaft = false; player.currentDimension = 'surface'; player.teleportCooldown = 0; player.score = 0; player.collectRadius = 90; player.radiusCost = 50; player.speedCost = 75; player.hpCost = 100; player.attackCooldown = 0; player.waterFillCooldown = 0; player.spawnX = 32; player.spawnY = 32; if (!isMultiplayerMode) { spawnFloorItem(40, 40, 'stick', 2); spawnFloorItem(-80, 60, 'rock', 2); spawnFloorItem(60, -40, 'apple', 2); } camX = 0; camY = 0; document.getElementById('starterMenu').style.display = 'none'; gameState = 'play'; mobileModeEnabled = document.getElementById('mobileModeCheckbox').checked; if (mobileModeEnabled) { document.body.classList.add('mobile-device'); document.getElementById('desktopControlsGuide').style.display = 'none'; } else { document.body.classList.remove('mobile-device'); document.getElementById('desktopControlsGuide').style.display = 'block'; } document.getElementById('mobileJoystickContainer').style.display = mobileModeEnabled ? 'block' : 'none'; document.getElementById('mobileActionContainer').style.display = mobileModeEnabled ? 'flex' : 'none'; });
 document.getElementById('savesBtn').addEventListener('click', () => { document.getElementById('menuPrimaryPanel').style.display = 'none'; document.getElementById('menuSavesPanel').style.display = 'flex'; updateSavesPanel(); });
 document.getElementById('savesBackBtn').addEventListener('click', () => { document.getElementById('menuSavesPanel').style.display = 'none'; document.getElementById('menuPrimaryPanel').style.display = 'flex'; });
 document.getElementById('settingsBtn').addEventListener('click', () => { document.getElementById('menuPrimaryPanel').style.display = 'none'; document.getElementById('menuSettingsPanel').style.display = 'flex'; });
 document.getElementById('settingsBackBtn').addEventListener('click', () => { document.getElementById('menuSettingsPanel').style.display = 'none'; document.getElementById('menuPrimaryPanel').style.display = 'flex'; });
 document.getElementById('exitBtn').addEventListener('click', () => { if (confirm("Выйти?")) window.close(); });
+// Настройка звука
+const sndCb = document.getElementById('soundEnabledCheckbox');
+sndCb.checked = SoundManager.enabled;
+sndCb.addEventListener('change', () => SoundManager.setEnabled(sndCb.checked));
 function showNotification(msg) { const p = document.getElementById('interactionPrompt'); p.innerText = msg; p.style.display = 'block'; clearTimeout(p.timeout); p.timeout = setTimeout(() => { p.style.display = 'none'; }, 2500); }
 window.showNotification = showNotification;
+function setBar(id, ratio) { const el = document.getElementById(id); if (!el) return; const w = Math.max(0, Math.min(100, ratio * 100)).toFixed(1) + '%'; if (el._w !== w) { el._w = w; el.style.width = w; } }
 function isPlayerInWater() { if (player.currentDimension === 'cave') return false; let tx = Math.floor(player.x / TILE_SIZE); let ty = Math.floor(player.y / TILE_SIZE); const b = getBiomeAt(tx, ty); return b === BIOMES.SEA || b === BIOMES.RIVER; }
 let lastTime = performance.now();
-function gameLoop(now) { let dt = (now - lastTime) / 1000; lastTime = now; updateTick(dt); renderScene(); window.player = player; window.camX = camX; window.camY = camY; window.gameState = gameState; requestAnimationFrame(gameLoop); }
-// НОВОЕ: паук — 25 ОЗ, спавнится только в пещере (параметр dim)
+function gameLoop(now) {
+let dt = (now - lastTime) / 1000; lastTime = now;
+if (dt > 0.1) dt = 0.1; // защита после сворачивания вкладки
+biomeCache.clear();
+if (uiDirty) { uiDirty = false; updateUiPanels(); }
+updateTick(dt); renderScene();
+window.player = player; window.camX = camX; window.camY = camY; window.gameState = gameState;
+requestAnimationFrame(gameLoop);
+}
 function spawnAnimalGroup(tx, ty, type, count, dim) { for(let i=0; i<count; i++) { let mH = 50; if (type === 'sheep') mH = 40; if (type === 'deer') mH = 100; if (type === 'wolf') mH = 60; if (type === 'spider') mH = 25; let aDim = dim || (type === 'spider' ? 'cave' : 'surface'); animals.push({ id: Math.random().toString(36).substr(2, 9), x: tx * TILE_SIZE + (Math.random() - 0.5) * TILE_SIZE * 2, y: ty * TILE_SIZE + (Math.random() - 0.5) * TILE_SIZE * 2, type, health: mH, maxHealth: mH, state: 'wander', targetX: 0, targetY: 0, wanderTime: 0, attackCooldown: 0, fleeTime: 0, dim: aDim, renderX: tx * TILE_SIZE, renderY: ty * TILE_SIZE }); } }
 function isTileBlockedForAnimal(x, y) { let tx = Math.floor(x / TILE_SIZE); let ty = Math.floor(y / TILE_SIZE); let f = worldModifications.get(getTileKey(tx, ty)); return f && (f.type === 'placed_log' || f.type === 'door' || f.type === 'brick_wall'); }
 function getFurnaceOutput(i) { let r = i.toLowerCase(); if (r === 'mud') return 'BRICK'; if (r === 'sand') return 'GLASS'; if (r === 'clay vessel') return 'FIRED CLAY VESSEL'; if (r === 'copper ore') return 'COPPER INGOT'; if (r === 'tin ore') return 'TIN INGOT'; if (r === 'iron ore') return 'IRON INGOT'; if (r === 'meat') return 'COOKED MEAT'; return null; }
 let llwt = 0;
-document.getElementById('loomWorkBtn').addEventListener('click', () => { if (!currentLoomTile) return; let now = Date.now(); if (now - llwt < 1000) return; llwt = now; if (currentLoomTile.itemSlot && currentLoomTile.itemSlot.name.toLowerCase() === 'yarn') { if (currentLoomTile.resultSlot && (currentLoomTile.resultSlot.name.toLowerCase() !== 'cloth' || currentLoomTile.resultSlot.count >= 64)) { showNotification("Нет места!"); return; } currentLoomTile.progress += 10; if (currentLoomTile.progress >= 100) { currentLoomTile.progress = 0; currentLoomTile.itemSlot.count--; if (currentLoomTile.itemSlot.count <= 0) currentLoomTile.itemSlot = null; if (!currentLoomTile.resultSlot) currentLoomTile.resultSlot = { name: 'CLOTH', count: 1 }; else currentLoomTile.resultSlot.count++; showNotification("Соткана ткань!"); } updateLoomUi(); updateUiPanels(); } else { showNotification("Вставьте пряжу!"); } });
+document.getElementById('loomWorkBtn').addEventListener('click', () => { if (!currentLoomTile) return; let now = Date.now(); if (now - llwt < 1000) return; llwt = now; if (currentLoomTile.itemSlot && currentLoomTile.itemSlot.name.toLowerCase() === 'yarn') { if (currentLoomTile.resultSlot && (currentLoomTile.resultSlot.name.toLowerCase() !== 'cloth' || currentLoomTile.resultSlot.count >= 64)) { SoundManager.play('error'); showNotification("Нет места!"); return; } currentLoomTile.progress += 10; SoundManager.play('click'); if (currentLoomTile.progress >= 100) { currentLoomTile.progress = 0; currentLoomTile.itemSlot.count--; if (currentLoomTile.itemSlot.count <= 0) currentLoomTile.itemSlot = null; if (!currentLoomTile.resultSlot) currentLoomTile.resultSlot = { name: 'CLOTH', count: 1 }; else currentLoomTile.resultSlot.count++; SoundManager.play('craft'); showNotification("Соткана ткань!"); } updateLoomUi(); requestUiUpdate(); } else { SoundManager.play('error'); showNotification("Вставьте пряжу!"); } });
 function updateTick(dt) {
-if (gameState !== 'play') return; player.attackCooldown = Math.max(0, player.attackCooldown - dt); let mx = 0; let my = 0;
+if (gameState !== 'play') return; player.attackCooldown = Math.max(0, player.attackCooldown - dt); swingTimer = Math.max(0, swingTimer - dt); let mx = 0; let my = 0;
 if (mobileModeEnabled && joystickActive) { mx = joystickX; my = joystickY; } else { if (inputs.KeyW) my -= 1; if (inputs.KeyS) my += 1; if (inputs.KeyA) mx -= 1; if (inputs.KeyD) mx += 1; if (mx !== 0 && my !== 0) { mx *= 0.7071; my *= 0.7071; } }
 const hb = document.getElementById('hotbarContainer'); if (mobileModeEnabled) { if (my > 0.15) hb.classList.add('hotbar-hidden'); else if (my < -0.15 || Math.abs(mx) > 0.15 || (mx === 0 && my === 0)) hb.classList.remove('hotbar-hidden'); } else hb.classList.remove('hotbar-hidden');
-let wt = isPlayerInWater(); let csm = 1.0; if (player.onRaft) csm = 2.0; else if (wt) csm = 0.5; let es = player.speed * csm;
+let wt = isPlayerInWater(); let csm = 1.0; if (player.onRaft) csm = 2.0; else if (wt) csm = 0.5;
+// ИСПРАВЛЕНО: движение теперь не зависит от FPS
+let es = player.speed * csm * dt * 60;
 let px = player.x + mx * es; let txX = Math.floor(px / TILE_SIZE); let tyX = Math.floor(player.y / TILE_SIZE); let fx = worldModifications.get(getTileKey(txX, tyX)); let cmx = true; if (fx && (fx.type === 'placed_log' || fx.type === 'brick_wall')) cmx = false; if (player.currentDimension === 'surface') { let bx = getBiomeAt(txX, tyX); if (player.onRaft && (bx !== BIOMES.SEA && bx !== BIOMES.RIVER)) cmx = false; } if (cmx) player.x = px;
 let py = player.y + my * es; let txY = Math.floor(player.x / TILE_SIZE); let tyY = Math.floor(py / TILE_SIZE); let fy = worldModifications.get(getTileKey(txY, tyY)); let cmy = true; if (fy && (fy.type === 'placed_log' || fy.type === 'brick_wall')) cmy = false; if (player.currentDimension === 'surface') { let by = getBiomeAt(txY, tyY); if (player.onRaft && (by !== BIOMES.SEA && by !== BIOMES.RIVER)) cmy = false; } if (cmy) player.y = py;
 if (mx !== 0 || my !== 0) player.angle = Math.atan2(my, mx);
-let tcx = player.x - canvas.width / 2; let tcy = player.y - canvas.height / 2; if (mobileModeEnabled) { camX = tcx; camY = tcy; } else { camX += (tcx - camX) * 0.1; camY += (tcy - camY) * 0.1; }
-// Интерполяция (плавность) для сетевых игроков
+let tcx = player.x - canvas.width / 2; let tcy = player.y - canvas.height / 2; if (mobileModeEnabled) { camX = tcx; camY = tcy; } else { camX += (tcx - camX) * Math.min(1, dt * 6); camY += (tcy - camY) * Math.min(1, dt * 6); }
+// Интерполяция для сетевых игроков (+ таймер взмаха)
 for (let id in remotePlayers) {
 const p = remotePlayers[id];
 if (p.renderX === undefined) { p.renderX = p.x; p.renderY = p.y; }
 p.renderX += (p.x - p.renderX) * Math.min(1, dt * 15);
 p.renderY += (p.y - p.renderY) * Math.min(1, dt * 15);
+p.remoteSwingTimer = Math.max(0, (p.remoteSwingTimer || 0) - dt);
 }
-// Интерполяция для животных (включая плавный поворот)
+// Интерполяция для животных
 animals.forEach(a => {
 if (a.renderX === undefined) { a.renderX = a.x; a.renderY = a.y; a.renderAngle = a.angle || 0; }
 a.renderX += (a.x - a.renderX) * Math.min(1, dt * 15);
@@ -640,22 +795,19 @@ a.renderAngle += diff * Math.min(1, dt * 15);
 }
 });
 player.hunger = Math.max(0, player.hunger - dt * 0.268); player.thirst = Math.max(0, player.thirst - dt * 0.469); if (player.hunger <= 0 || player.thirst <= 0) player.health = Math.max(0, player.health - dt * 4.0); if (player.health > 0 && player.health < player.maxHealth && player.hunger >= 0.75 * player.maxHunger && player.thirst >= 0.75 * player.maxThirst) { player.health = Math.min(player.maxHealth, player.health + dt * 5.0); }
-if (player.health <= 0) { player.health = player.maxHealth; player.hunger = player.maxHunger; player.thirst = player.maxThirst; player.x = player.spawnX; player.y = player.spawnY; player.currentDimension = 'surface'; player.onRaft = false; player.teleportCooldown = 2; animals.forEach(a => { a.state = 'wander'; a.fleeTime = 0; }); showNotification("ВЫ ПОГИБЛИ!"); return; }
-document.getElementById('healthBar').style.width = `${(player.health / player.maxHealth) * 100}%`; document.getElementById('hungerBar').style.width = `${(player.hunger / player.maxHunger) * 100}%`; document.getElementById('thirstBar').style.width = `${(player.thirst / player.maxThirst) * 100}%`; if (player.teleportCooldown > 0) player.teleportCooldown = Math.max(0, player.teleportCooldown - dt);
+if (player.health <= 0) { player.health = player.maxHealth; player.hunger = player.maxHunger; player.thirst = player.maxThirst; player.x = player.spawnX; player.y = player.spawnY; player.currentDimension = 'surface'; player.onRaft = false; player.teleportCooldown = 2; SoundManager.play('death'); animals.forEach(a => { a.state = 'wander'; a.fleeTime = 0; }); showNotification("ВЫ ПОГИБЛИ!"); return; }
+setBar('healthBar', player.health / player.maxHealth); setBar('hungerBar', player.hunger / player.maxHunger); setBar('thirstBar', player.thirst / player.maxThirst); if (player.teleportCooldown > 0) player.teleportCooldown = Math.max(0, player.teleportCooldown - dt);
 if (player.waterFillCooldown > 0) player.waterFillCooldown -= dt;
-if (wt && player.waterFillCooldown <= 0) { let ai = hotbar[activeHotbarIndex]; if (ai && ai.name.toLowerCase() === 'fired clay vessel') { ai.count--; if (ai.count <= 0) hotbar[activeHotbarIndex] = null; addItemToInventory('FIRED CLAY VESSEL WITH WATER', 1); updateUiPanels(); showNotification("Сосуд наполнен!"); player.waterFillCooldown = 1.0; } }
-let ptx = Math.floor(player.x / TILE_SIZE); let pty = Math.floor(player.y / TILE_SIZE); generateTileFeatures(ptx, pty, getBiomeAt(ptx, pty)); let ctf = worldModifications.get(getTileKey(ptx, pty)); if (ctf && ctf.type === 'cave_entrance' && player.teleportCooldown === 0) { if (player.currentDimension === 'cave') { player.currentDimension = 'surface'; showNotification("Вы вышли на поверхность."); } else { if (player.onRaft) showNotification("Слезьте с плота!"); else { player.currentDimension = 'cave'; showNotification("Вы спустились в пещеру."); } } player.teleportCooldown = 1.5; }
+if (wt && player.waterFillCooldown <= 0) { let ai = hotbar[activeHotbarIndex]; if (ai && ai.name.toLowerCase() === 'fired clay vessel') { ai.count--; if (ai.count <= 0) hotbar[activeHotbarIndex] = null; addItemToInventory('FIRED CLAY VESSEL WITH WATER', 1); SoundManager.play('drink'); requestUiUpdate(); showNotification("Сосуд наполнен!"); player.waterFillCooldown = 1.0; } }
+let ptx = Math.floor(player.x / TILE_SIZE); let pty = Math.floor(player.y / TILE_SIZE); generateTileFeatures(ptx, pty, getBiomeAt(ptx, pty)); let ctf = worldModifications.get(getTileKey(ptx, pty)); if (ctf && ctf.type === 'cave_entrance' && player.teleportCooldown === 0) { if (player.currentDimension === 'cave') { player.currentDimension = 'surface'; showNotification("Вы вышли на поверхность."); } else { if (player.onRaft) showNotification("Слезьте с плота!"); else { player.currentDimension = 'cave'; showNotification("Вы спустились в пещеру."); } } SoundManager.play('teleport'); player.teleportCooldown = 1.5; }
 if (!isMultiplayerMode) {
 if (Math.random() < 0.02 && animals.length < 25) { let sa = Math.random() * Math.PI * 2; let sd = 800 + Math.random() * 400; let sx = player.x + Math.cos(sa) * sd; let sy = player.y + Math.sin(sa) * sd; let stx = Math.floor(sx / TILE_SIZE); let sty = Math.floor(sy / TILE_SIZE); let bio = getBiomeAt(stx, sty); if (bio !== BIOMES.SEA && bio !== BIOMES.RIVER) { let rand = Math.random(); let gs = Math.floor(Math.random() * 5) + 1; if (bio === BIOMES.FOREST || bio === BIOMES.TAIGA) { if (rand < 0.3) spawnAnimalGroup(stx, sty, 'wolf', Math.random() > 0.5 ? gs : 1); else if (rand < 0.6) spawnAnimalGroup(stx, sty, 'deer', gs); else spawnAnimalGroup(stx, sty, 'pig', gs); } else if (bio === BIOMES.PLAIN) { if (rand < 0.2) spawnAnimalGroup(stx, sty, 'wolf', gs); else if (rand < 0.5) spawnAnimalGroup(stx, sty, 'sheep', gs); else spawnAnimalGroup(stx, sty, 'pig', gs); } else if (bio === BIOMES.STEPPE) { if (rand < 0.2) spawnAnimalGroup(stx, sty, 'wolf', gs); else if (rand < 0.6) spawnAnimalGroup(stx, sty, 'sheep', gs); else spawnAnimalGroup(stx, sty, 'deer', gs); } } }
-// НОВОЕ: спавн пауков только в пещере
 if (player.currentDimension === 'cave') { let caveSpiders = animals.filter(a => (a.dim || 'surface') === 'cave').length; if (caveSpiders < 8 && Math.random() < 0.04) { let sa = Math.random() * Math.PI * 2; let sd = 400 + Math.random() * 300; let sx = player.x + Math.cos(sa) * sd; let sy = player.y + Math.sin(sa) * sd; spawnAnimalGroup(Math.floor(sx / TILE_SIZE), Math.floor(sy / TILE_SIZE), 'spider', 1, 'cave'); } }
-// ИСПРАВЛЕНО: Добавлен расчет угла поворота (a.angle) для одиночной игры
 for (let i = animals.length - 1; i >= 0; i--) {
 let a = animals[i]; if ((a.dim || 'surface') !== player.currentDimension) continue;
 let dx = player.x - a.x; let dy = player.y - a.y; let dist = Math.hypot(dx, dy);
 if (dist > 1500) { animals.splice(i, 1); continue; } if (dist < 0.1) dist = 0.1;
 a.attackCooldown = Math.max(0, a.attackCooldown - dt); a.fleeTime = Math.max(0, a.fleeTime - dt);
-// НОВОЕ: паук агрессивен как волк
 if (a.type === 'wolf' || a.type === 'spider') { if (dist < 250) a.state = 'chase'; else if (dist > 400) a.state = 'wander'; }
 else { if (a.fleeTime > 0) a.state = 'flee'; else a.state = 'wander'; }
 if (a.state === 'chase') {
@@ -663,8 +815,7 @@ let cspeed = a.type === 'spider' ? 75 : 65;
 let nx = dx / dist; let ny = dy / dist; let nX = a.x + nx * cspeed * dt; let nY = a.y + ny * cspeed * dt;
 if (!isTileBlockedForAnimal(nX, a.y)) a.x = nX; if (!isTileBlockedForAnimal(a.x, nY)) a.y = nY;
 a.angle = Math.atan2(ny, nx);
-// НОВОЕ: паук наносит 10 урона, волк — 20
-if (dist < 45 && a.attackCooldown === 0) { let biteDmg = a.type === 'spider' ? 10 : 20; player.health -= biteDmg; a.attackCooldown = 1.5; showNotification(a.type === 'spider' ? `Паук укусил вас! (-${biteDmg} HP)` : `Волк укусил вас! (-${biteDmg} HP)`); }
+if (dist < 45 && a.attackCooldown === 0) { let biteDmg = a.type === 'spider' ? 10 : 20; player.health -= biteDmg; a.attackCooldown = 1.5; SoundManager.play('hurt'); showNotification(a.type === 'spider' ? `Паук укусил вас! (-${biteDmg} HP)` : `Волк укусил вас! (-${biteDmg} HP)`); }
 } else if (a.state === 'flee') {
 let nx = -dx / dist; let ny = -dy / dist; let nX = a.x + nx * 80 * dt; let nY = a.y + ny * 80 * dt;
 if (!isTileBlockedForAnimal(nX, a.y)) a.x = nX; if (!isTileBlockedForAnimal(a.x, nY)) a.y = nY;
@@ -683,14 +834,17 @@ a.angle = Math.atan2(ny, nx);
 }
 }
 }
-for (let i = projectiles.length - 1; i >= 0; i--) { let p = projectiles[i]; if ((p.dim || 'surface') !== player.currentDimension) continue; p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt; let hit = false; for(let j = animals.length - 1; j >= 0; j--) { let a = animals[j]; if ((a.dim || 'surface') !== p.dim) continue; if(Math.hypot(a.x - p.x, a.y - p.y) < 20) { if (isMultiplayerMode) { socket.emit('damage_animal', { id: a.id, damage: p.damage }); showNotification(`Попадание в ${a.type.toUpperCase()}!`); } else { a.health -= p.damage; if (a.health <= 0) { let drops = []; if (a.type === 'pig') { drops.push({ name: 'hide', count: 1 }); drops.push({ name: 'meat', count: Math.floor(Math.random() * 3) + 1 }); if (Math.random() < 0.5) drops.push({ name: 'fat', count: 1 }); } else if (a.type === 'sheep') { drops.push({ name: 'hide', count: 1 }); drops.push({ name: 'meat', count: Math.floor(Math.random() * 2) + 1 }); drops.push({ name: 'wool', count: 1 }); } else if (a.type === 'deer') { drops.push({ name: 'hide', count: Math.floor(Math.random() * 2) + 1 }); drops.push({ name: 'meat', count: Math.floor(Math.random() * 3) + 2 }); drops.push({ name: 'sinew', count: 1 }); } else if (a.type === 'wolf') { drops.push({ name: 'hide', count: 1 }); } else if (a.type === 'spider') { drops.push({ name: 'sinew', count: 1 }); } drops.forEach(d => spawnFloorItem(a.x, a.y, d.name, d.count)); player.score += 30; animals.splice(j, 1); showNotification(`Убито: ${a.type.toUpperCase()}!`); } else { showNotification(`Попадание в ${a.type.toUpperCase()}!`); a.fleeTime = 5; a.state = 'flee'; } } hit = true; break; } }
+for (let i = projectiles.length - 1; i >= 0; i--) { let p = projectiles[i]; if ((p.dim || 'surface') !== player.currentDimension) continue; p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt; let hit = false; for(let j = animals.length - 1; j >= 0; j--) { let a = animals[j]; if ((a.dim || 'surface') !== p.dim) continue; if(Math.hypot(a.x - p.x, a.y - p.y) < 20) { if (isMultiplayerMode) { socket.emit('damage_animal', { id: a.id, damage: p.damage }); showNotification(`Попадание в ${a.type.toUpperCase()}!`); } else { a.health -= p.damage; if (a.health <= 0) { let drops = []; if (a.type === 'pig') { drops.push({ name: 'hide', count: 1 }); drops.push({ name: 'meat', count: Math.floor(Math.random() * 3) + 1 }); if (Math.random() < 0.5) drops.push({ name: 'fat', count: 1 }); } else if (a.type === 'sheep') { drops.push({ name: 'hide', count: 1 }); drops.push({ name: 'meat', count: Math.floor(Math.random() * 2) + 1 }); drops.push({ name: 'wool', count: 1 }); } else if (a.type === 'deer') { drops.push({ name: 'hide', count: Math.floor(Math.random() * 2) + 1 }); drops.push({ name: 'meat', count: Math.floor(Math.random() * 3) + 2 }); drops.push({ name: 'sinew', count: 1 }); } else if (a.type === 'wolf') { drops.push({ name: 'hide', count: 1 }); } else if (a.type === 'spider') { drops.push({ name: 'sinew', count: 1 }); } drops.forEach(d => spawnFloorItem(a.x, a.y, d.name, d.count)); player.score += 30; animals.splice(j, 1); SoundManager.play('animal_death'); showNotification(`Убито: ${a.type.toUpperCase()}!`); } else { showNotification(`Попадание в ${a.type.toUpperCase()}!`); a.fleeTime = 5; a.state = 'flee'; } } hit = true; break; } }
 if(!hit) { let tx = Math.floor(p.x / TILE_SIZE); let ty = Math.floor(p.y / TILE_SIZE); let feat = worldModifications.get(getTileKey(tx, ty, p.dim)); if (feat && ['tree', 'stone', 'placed_log', 'door', 'brick_wall', 'furnace', 'brick_furnace', 'copper_ore', 'tin_ore', 'iron_ore', 'sulfur_ore', 'coal_ore'].includes(feat.type)) hit = true; } if (hit || p.life <= 0) projectiles.splice(i, 1); }
 let fp = document.getElementById('furnaceMenu'); let bfp = document.getElementById('brickFurnaceMenu'); let lp = document.getElementById('loomMenu');
 let ff = false; let fbf = false; let fl = false; let pTx = Math.floor(player.x / TILE_SIZE); let pTy = Math.floor(player.y / TILE_SIZE);
-for (let [ks, ft] of worldModifications.entries()) {
-if (ft && ft.type === 'furnace') { if (ft.itemSlot && ft.fuelSlot && ['coal', 'log'].includes(ft.fuelSlot.name.toLowerCase())) { let so = getFurnaceOutput(ft.itemSlot.name); if (so && (!ft.resultSlot || (ft.resultSlot.name === so && ft.resultSlot.count < 64))) { ft.cookProgress += dt * 25; if (ft.cookProgress >= 100) { ft.cookProgress = 0; ft.itemSlot.count--; if (ft.itemSlot.count <= 0) ft.itemSlot = null; ft.fuelSlot.count--; if (ft.fuelSlot.count <= 0) ft.fuelSlot = null; if (!ft.resultSlot) ft.resultSlot = { name: so, count: 1 }; else ft.resultSlot.count++; } } } else ft.cookProgress = Math.max(0, ft.cookProgress - dt * 40); let parts = ks.split('_'); let fD = parts[0]; let [fX, fY] = parts[1].split(',').map(Number); if (fD === player.currentDimension && fX === pTx && fY === pTy) { currentFurnaceTile = ft; ff = true; } }
-else if (ft && ft.type === 'brick_furnace') { let hf = ft.fuelSlot && ['coal', 'log'].includes(ft.fuelSlot.name.toLowerCase()); let ip = false; for(let i=0; i<3; i++) { if (ft.itemSlots[i] && hf) { let so = getFurnaceOutput(ft.itemSlots[i].name); if (so && (!ft.resultSlots[i] || (ft.resultSlots[i].name === so && ft.resultSlots[i].count < 64))) { ft.cookProgress[i] += dt * 75; ip = true; if (ft.cookProgress[i] >= 100) { ft.cookProgress[i] = 0; ft.itemSlots[i].count--; if (ft.itemSlots[i].count <= 0) ft.itemSlots[i] = null; ft.fuelSlot.count--; if (ft.fuelSlot.count <= 0) ft.fuelSlot = null; hf = ft.fuelSlot && ft.fuelSlot.count > 0; if (!ft.resultSlots[i]) ft.resultSlots[i] = { name: so, count: 1 }; else ft.resultSlots[i].count++; } } } } if (!ip) { for(let i=0; i<3; i++) ft.cookProgress[i] = Math.max(0, ft.cookProgress[i] - dt * 40); } let parts = ks.split('_'); let fD = parts[0]; let [fX, fY] = parts[1].split(',').map(Number); if (fD === player.currentDimension && fX === pTx && fY === pTy) { currentBrickFurnaceTile = ft; fbf = true; } }
-else if (ft && ft.type === 'loom') { let parts = ks.split('_'); let fD = parts[0]; let [fX, fY] = parts[1].split(',').map(Number); if (fD === player.currentDimension && fX === pTx && fY === pTy) { currentLoomTile = ft; fl = true; } }
+// ОПТИМИЗАЦИЯ: обходим только зарегистрированные механизмы, а не всю карту мира
+for (const ks of machineKeys) {
+const ft = worldModifications.get(ks);
+if (!ft || !MACHINE_TYPES.includes(ft.type)) { machineKeys.delete(ks); continue; }
+if (ft.type === 'furnace') { if (ft.itemSlot && ft.fuelSlot && ['coal', 'log'].includes(ft.fuelSlot.name.toLowerCase())) { let so = getFurnaceOutput(ft.itemSlot.name); if (so && (!ft.resultSlot || (ft.resultSlot.name === so && ft.resultSlot.count < 64))) { ft.cookProgress += dt * 25; if (ft.cookProgress >= 100) { ft.cookProgress = 0; ft.itemSlot.count--; if (ft.itemSlot.count <= 0) ft.itemSlot = null; ft.fuelSlot.count--; if (ft.fuelSlot.count <= 0) ft.fuelSlot = null; if (!ft.resultSlot) ft.resultSlot = { name: so, count: 1 }; else ft.resultSlot.count++; } } } else ft.cookProgress = Math.max(0, ft.cookProgress - dt * 40); let parts = ks.split('_'); let fD = parts[0]; let [fX, fY] = parts[1].split(',').map(Number); if (fD === player.currentDimension && fX === pTx && fY === pTy) { currentFurnaceTile = ft; ff = true; } }
+else if (ft.type === 'brick_furnace') { let hf = ft.fuelSlot && ['coal', 'log'].includes(ft.fuelSlot.name.toLowerCase()); let ip = false; for(let i=0; i<3; i++) { if (ft.itemSlots[i] && hf) { let so = getFurnaceOutput(ft.itemSlots[i].name); if (so && (!ft.resultSlots[i] || (ft.resultSlots[i].name === so && ft.resultSlots[i].count < 64))) { ft.cookProgress[i] += dt * 75; ip = true; if (ft.cookProgress[i] >= 100) { ft.cookProgress[i] = 0; ft.itemSlots[i].count--; if (ft.itemSlots[i].count <= 0) ft.itemSlots[i] = null; ft.fuelSlot.count--; if (ft.fuelSlot.count <= 0) ft.fuelSlot = null; hf = ft.fuelSlot && ft.fuelSlot.count > 0; if (!ft.resultSlots[i]) ft.resultSlots[i] = { name: so, count: 1 }; else ft.resultSlots[i].count++; } } } } if (!ip) { for(let i=0; i<3; i++) ft.cookProgress[i] = Math.max(0, ft.cookProgress[i] - dt * 40); } let parts = ks.split('_'); let fD = parts[0]; let [fX, fY] = parts[1].split(',').map(Number); if (fD === player.currentDimension && fX === pTx && fY === pTy) { currentBrickFurnaceTile = ft; fbf = true; } }
+else if (ft.type === 'loom') { let parts = ks.split('_'); let fD = parts[0]; let [fX, fY] = parts[1].split(',').map(Number); if (fD === player.currentDimension && fX === pTx && fY === pTy) { currentLoomTile = ft; fl = true; } }
 }
 if (ff) { fp.style.display = 'block'; updateFurnaceUi(); } else { fp.style.display = 'none'; currentFurnaceTile = null; } if (fbf) { bfp.style.display = 'block'; updateBrickFurnaceUi(); } else { bfp.style.display = 'none'; currentBrickFurnaceTile = null; } if (fl) { lp.style.display = 'block'; updateLoomUi(); } else { lp.style.display = 'none'; currentLoomTile = null; }
 let pt = ""; let sp = false;
@@ -713,7 +867,6 @@ pE.style.display = 'block';
 } else {
 if (pE.innerText.startsWith('ЛКМ:') && !pE.timeout) pE.style.display = 'none';
 }
-// НОВОЕ: обновление частиц, тряски и анимаций подбора
 for (let i = particles.length - 1; i >= 0; i--) { let pp = particles[i]; pp.x += pp.vx * dt; pp.y += pp.vy * dt; pp.vx *= 0.9; pp.vy *= 0.9; pp.life -= dt; if (pp.life <= 0) particles.splice(i, 1); }
 for (let [k, t] of tileShakes) { let nt = t - dt; if (nt <= 0) tileShakes.delete(k); else tileShakes.set(k, nt); }
 for (let i = pickupAnims.length - 1; i >= 0; i--) { let pa = pickupAnims[i]; pa.t += dt; if (pa.t >= pa.dur) pickupAnims.splice(i, 1); }
@@ -725,12 +878,12 @@ if (gameState !== 'play') return; ctx.clearRect(0, 0, canvas.width, canvas.heigh
 if (mobileModeEnabled) { ctx.translate(canvas.width / 2, canvas.height / 2); ctx.scale(1.2, 1.2); ctx.translate(-canvas.width / 2, -canvas.height / 2); } ctx.translate(-camX, -camY);
 let sc = Math.floor(camX / TILE_SIZE) - 1; let ec = Math.ceil((camX + canvas.width) / TILE_SIZE) + 1; let sr = Math.floor(camY / TILE_SIZE) - 1; let er = Math.ceil((camY + canvas.height) / TILE_SIZE) + 1;
 for (let r = sr; r <= er; r++) { for (let c = sc; c <= ec; c++) {
+let b = getBiomeAt(c, r);
 if (player.currentDimension === 'cave') { let ct = TextureManager.get('tiles', 'cave'); if (ct) ctx.drawImage(ct, c * TILE_SIZE, r * TILE_SIZE, TILE_SIZE, TILE_SIZE); else { ctx.fillStyle = '#2e2e33'; ctx.fillRect(c * TILE_SIZE, r * TILE_SIZE, TILE_SIZE, TILE_SIZE); } }
-else { let b = getBiomeAt(c, r); let bk = Object.keys(BIOMES).find(k => BIOMES[k] === b); let tt = TextureManager.get('tiles', bk.toLowerCase()); if (tt) ctx.drawImage(tt, c * TILE_SIZE, r * TILE_SIZE, TILE_SIZE, TILE_SIZE); else { ctx.fillStyle = b.color; ctx.fillRect(c * TILE_SIZE, r * TILE_SIZE, TILE_SIZE, TILE_SIZE); } }
+else { let bk = Object.keys(BIOMES).find(k => BIOMES[k] === b); let tt = TextureManager.get('tiles', bk.toLowerCase()); if (tt) ctx.drawImage(tt, c * TILE_SIZE, r * TILE_SIZE, TILE_SIZE, TILE_SIZE); else { ctx.fillStyle = b.color; ctx.fillRect(c * TILE_SIZE, r * TILE_SIZE, TILE_SIZE, TILE_SIZE); } }
 ctx.strokeStyle = 'rgba(0,0,0,0.03)'; ctx.strokeRect(c * TILE_SIZE, r * TILE_SIZE, TILE_SIZE, TILE_SIZE);
-let f = generateTileFeatures(c, r, getBiomeAt(c, r)); let cx = c * TILE_SIZE + TILE_SIZE / 2; let cy = r * TILE_SIZE + TILE_SIZE / 2;
+let f = generateTileFeatures(c, r, b); let cx = c * TILE_SIZE + TILE_SIZE / 2; let cy = r * TILE_SIZE + TILE_SIZE / 2;
 if (f) {
-// НОВОЕ: тряска объекта при получении урона
 let shk = tileShakes.get(getTileKey(c, r));
 ctx.save();
 if (shk) ctx.translate((Math.random() - 0.5) * 6, (Math.random() - 0.5) * 6);
@@ -757,17 +910,15 @@ else if (f.type === 'seaweed_plant') { ctx.strokeStyle = '#0e7490'; ctx.lineWidt
 }
 ctx.restore();
 } drawFeatureHealthBar(cx, cy, f); } }
-floorItems.forEach(item => { if ((item.dim || 'surface') !== player.currentDimension) return; let ik = item.name.toLowerCase().replace(/ /g, '_'); let it = TextureManager.get('items', ik); if (it) ctx.drawImage(it, item.x - 16, item.y - 16, 32, 32); else { ctx.fillStyle = getItemFallbackColor(item.name); ctx.beginPath(); ctx.arc(item.x, item.y, 8, 0, Math.PI * 2); ctx.fill(); ctx.strokeStyle = '#000'; ctx.stroke(); ctx.fillStyle = '#fff'; ctx.font = '10px sans-serif'; ctx.textAlign = 'center'; ctx.fillText(item.name.toUpperCase(), item.x, item.y - 12); } });
-// НОВОЕ: анимации подбора предметов (летят к игроку и исчезают)
+// ОПТИМИЗАЦИЯ: предметы на полу рисуются только в пределах экрана
+floorItems.forEach(item => { if ((item.dim || 'surface') !== player.currentDimension) return; if (item.x < camX - 80 || item.x > camX + canvas.width + 80 || item.y < camY - 80 || item.y > camY + canvas.height + 80) return; let ik = item.name.toLowerCase().replace(/ /g, '_'); let it = TextureManager.get('items', ik); if (it) ctx.drawImage(it, item.x - 16, item.y - 16, 32, 32); else { ctx.fillStyle = getItemFallbackColor(item.name); ctx.beginPath(); ctx.arc(item.x, item.y, 8, 0, Math.PI * 2); ctx.fill(); ctx.strokeStyle = '#000'; ctx.stroke(); ctx.fillStyle = '#fff'; ctx.font = '10px sans-serif'; ctx.textAlign = 'center'; ctx.fillText(item.name.toUpperCase(), item.x, item.y - 12); } });
 pickupAnims.forEach(pa => { let pr = Math.min(1, pa.t / pa.dur); let ease = pr * pr; let ax = pa.x + (player.x - pa.x) * ease; let ay = pa.y + (player.y - pa.y) * ease - Math.sin(pr * Math.PI) * 20; ctx.save(); ctx.globalAlpha = 1 - pr; let sz = 32 * (1 - pr * 0.5); let it = TextureManager.get('items', pa.name.toLowerCase().replace(/ /g, '_')); if (it) ctx.drawImage(it, ax - sz / 2, ay - sz / 2, sz, sz); else { ctx.fillStyle = getItemFallbackColor(pa.name); ctx.beginPath(); ctx.arc(ax, ay, 8 * (1 - pr * 0.5), 0, Math.PI * 2); ctx.fill(); } ctx.restore(); });
-// НОВОЕ: отрисовка животных с масштабированием и поворотом
 animals.forEach(a => {
 if ((a.dim || 'surface') !== player.currentDimension) return;
 let rX = a.renderX !== undefined ? a.renderX : a.x;
 let rY = a.renderY !== undefined ? a.renderY : a.y;
-// Масштаб: 1.5 для мирных, 2 для волков, 1.3 для пауков
 let scale = a.type === 'wolf' ? 2 : (a.type === 'spider' ? 1.3 : 1.5);
-let radius = 16 * scale; // Базовый радиус для полоски здоровья и текста
+let radius = 16 * scale;
 ctx.save();
 ctx.translate(rX, rY);
 if (a.angle !== undefined) ctx.rotate(a.angle);
@@ -782,7 +933,6 @@ let cl = '#a3a3a3';
 if (a.type === 'sheep') cl = '#f3f4f6';
 if (a.type === 'deer') cl = '#92400e';
 if (a.type === 'wolf') cl = '#4b5563';
-// НОВОЕ: запасная отрисовка паука с лапками
 if (a.type === 'spider') {
 ctx.strokeStyle = '#111827'; ctx.lineWidth = 3;
 for (let sgi = -1; sgi <= 1; sgi += 2) { for (let lg = -1; lg <= 1; lg++) { ctx.beginPath(); ctx.moveTo(lg * sz * 0.5, 0); ctx.lineTo(lg * sz * 0.9, sgi * sz * 1.6); ctx.stroke(); } }
@@ -798,7 +948,6 @@ ctx.stroke();
 if (a.type === 'spider') { ctx.fillStyle = '#ef4444'; ctx.beginPath(); ctx.arc(sz * 0.5, -sz * 0.3, 2, 0, Math.PI * 2); ctx.fill(); ctx.beginPath(); ctx.arc(sz * 0.5, sz * 0.3, 2, 0, Math.PI * 2); ctx.fill(); }
 }
 ctx.restore();
-// Полоса здоровья и имя (рисуются без поворота)
 if (a.health < a.maxHealth) {
 ctx.fillStyle = 'red'; ctx.fillRect(rX - 18, rY - radius - 12, 36, 5);
 ctx.fillStyle = 'lime'; ctx.fillRect(rX - 18, rY - radius - 12, 36 * (a.health / a.maxHealth), 5);
@@ -807,26 +956,37 @@ ctx.fillStyle = '#fff'; ctx.font = 'bold 10px sans-serif'; ctx.textAlign = 'cent
 ctx.fillText(a.type.toUpperCase(), rX, rY - radius - 16);
 });
 projectiles.forEach(p => { if (p.type === 'bullet') { ctx.fillStyle = '#fbbf24'; ctx.beginPath(); ctx.arc(p.x, p.y, 4, 0, Math.PI * 2); ctx.fill(); ctx.strokeStyle = '#b45309'; ctx.lineWidth = 1.5; ctx.stroke(); } else { ctx.strokeStyle = '#92400e'; ctx.lineWidth = 3; ctx.beginPath(); let a = Math.atan2(p.vy, p.vx); ctx.moveTo(p.x, p.y); ctx.lineTo(p.x - Math.cos(a) * 15, p.y - Math.sin(a) * 15); ctx.stroke(); } });
-// НОВОЕ: отрисовка частиц разрушения
 particles.forEach(pp => { ctx.save(); ctx.globalAlpha = Math.max(0, pp.life / pp.maxLife); ctx.fillStyle = pp.color; ctx.fillRect(pp.x - pp.size / 2, pp.y - pp.size / 2, pp.size, pp.size); ctx.restore(); });
 if (player.onRaft) { ctx.save(); ctx.translate(player.x, player.y); ctx.rotate(player.angle); ctx.fillStyle = '#d97706'; ctx.fillRect(-24, -24, 48, 48); ctx.strokeStyle = '#78350f'; ctx.lineWidth = 3; ctx.strokeRect(-24, -24, 48, 48); for (let o = -12; o <= 12; o += 12) { ctx.beginPath(); ctx.moveTo(o, -24); ctx.lineTo(o, 24); ctx.stroke(); } ctx.restore(); }
 ctx.save(); ctx.translate(player.x, player.y); ctx.rotate(player.angle);
 if (playerTexture.complete && playerTexture.naturalHeight !== 0) { ctx.drawImage(playerTexture, -24, -24, 48, 48); }
 else { ctx.fillStyle = '#eab308'; ctx.beginPath(); ctx.arc(0, 0, 16, 0, Math.PI * 2); ctx.fill(); ctx.strokeStyle = '#000'; ctx.lineWidth = 2; ctx.stroke(); }
-// НОВОЕ: предмет из активного слота хотбара "в руке" игрока (у передней части спрайта)
+// НОВОЕ: предмет в руке + анимация взмаха при использовании
 const heldActive = hotbar[activeHotbarIndex];
-if (heldActive) { ctx.save(); ctx.translate(20, 16); ctx.rotate(0.35); let hitTex = TextureManager.get('items', heldActive.name.toLowerCase().replace(/ /g, '_')); if (hitTex) ctx.drawImage(hitTex, -13, -13, 26, 26); else { ctx.fillStyle = getItemFallbackColor(heldActive.name); ctx.beginPath(); ctx.arc(0, 0, 9, 0, Math.PI * 2); ctx.fill(); ctx.strokeStyle = '#000'; ctx.lineWidth = 2; ctx.stroke(); } ctx.restore(); }
-ctx.restore();
+if (heldActive) {
+let swK = swingTimer > 0 ? 1 - swingTimer / SWING_DURATION : 0;
+let sw = Math.sin(swK * Math.PI) * swingPower;
+ctx.save(); ctx.translate(20 + sw * 10, 16 - sw * 8); ctx.rotate(0.35 - sw * 1.7);
+let hitTex = TextureManager.get('items', heldActive.name.toLowerCase().replace(/ /g, '_'));
+if (hitTex) ctx.drawImage(hitTex, -13, -13, 26, 26);
+else { ctx.fillStyle = getItemFallbackColor(heldActive.name); ctx.beginPath(); ctx.arc(0, 0, 9, 0, Math.PI * 2); ctx.fill(); ctx.strokeStyle = '#000'; ctx.lineWidth = 2; ctx.stroke(); }
 ctx.restore();
 }
+ctx.restore();
+ctx.restore();
+// Удалённые игроки рисуются после восстановления трансформаций (экранные координаты)
+if (isMultiplayerMode) renderRemotePlayers();
+}
 function updateShopButtons() { document.getElementById('buyRadiusBtn').innerText = `+Radius (Cost: ${player.radiusCost}) | Current: ${player.collectRadius}`; document.getElementById('buySpeedBtn').innerText = `+Speed (Cost: ${player.speedCost}) | Current: ${player.speed.toFixed(1)}`; document.getElementById('buyHpBtn').innerText = `+Max HP (Cost: ${player.hpCost}) | Current: ${player.maxHealth}`; }
-document.getElementById('scoreContainer').addEventListener('click', (e) => { e.stopPropagation(); const s = document.getElementById('scoreShopMenu'); if (s.style.display === 'none' || s.style.display === '') { s.style.display = 'block'; updateShopButtons(); } else s.style.display = 'none'; });
-document.getElementById('closeShopBtn').addEventListener('click', () => document.getElementById('scoreShopMenu').style.display = 'none');
-document.getElementById('buyRadiusBtn').addEventListener('click', () => { if (player.score >= player.radiusCost) { player.score -= player.radiusCost; player.collectRadius += 20; player.radiusCost = Math.floor(player.radiusCost * 1.5); updateShopButtons(); updateUiPanels(); showNotification("Радиус улучшен!"); } else showNotification("Недостаточно очков!"); });
-document.getElementById('buySpeedBtn').addEventListener('click', () => { if (player.score >= player.speedCost) { player.score -= player.speedCost; player.speed += 0.5; player.speedCost = Math.floor(player.speedCost * 1.5); updateShopButtons(); updateUiPanels(); showNotification("Скорость улучшена!"); } else showNotification("Недостаточно очков!"); });
-document.getElementById('buyHpBtn').addEventListener('click', () => { if (player.score >= player.hpCost) { player.score -= player.hpCost; player.maxHealth += 20; player.health += 20; player.hpCost = Math.floor(player.hpCost * 1.5); updateShopButtons(); updateUiPanels(); showNotification("Макс. HP улучшен!"); } else showNotification("Недостаточно очков!"); });
+document.getElementById('scoreContainer').addEventListener('click', (e) => { e.stopPropagation(); SoundManager.play('click'); const s = document.getElementById('scoreShopMenu'); if (s.style.display === 'none' || s.style.display === '') { s.style.display = 'block'; updateShopButtons(); } else s.style.display = 'none'; });
+document.getElementById('closeShopBtn').addEventListener('click', () => { SoundManager.play('click'); document.getElementById('scoreShopMenu').style.display = 'none'; });
+document.getElementById('buyRadiusBtn').addEventListener('click', () => { if (player.score >= player.radiusCost) { player.score -= player.radiusCost; player.collectRadius += 20; player.radiusCost = Math.floor(player.radiusCost * 1.5); updateShopButtons(); requestUiUpdate(); SoundManager.play('craft'); showNotification("Радиус улучшен!"); } else { SoundManager.play('error'); showNotification("Недостаточно очков!"); } });
+document.getElementById('buySpeedBtn').addEventListener('click', () => { if (player.score >= player.speedCost) { player.score -= player.speedCost; player.speed += 0.5; player.speedCost = Math.floor(player.speedCost * 1.5); updateShopButtons(); requestUiUpdate(); SoundManager.play('craft'); showNotification("Скорость улучшена!"); } else { SoundManager.play('error'); showNotification("Недостаточно очков!"); } });
+document.getElementById('buyHpBtn').addEventListener('click', () => { if (player.score >= player.hpCost) { player.score -= player.hpCost; player.maxHealth += 20; player.health += 20; player.hpCost = Math.floor(player.hpCost * 1.5); updateShopButtons(); requestUiUpdate(); SoundManager.play('craft'); showNotification("Макс. HP улучшен!"); } else { SoundManager.play('error'); showNotification("Недостаточно очков!"); } });
 document.getElementById('saveBtn').addEventListener('click', saveGame);
-buildUiGrids(); updateUiPanels(); requestAnimationFrame(gameLoop);
+buildUiGrids(); updateUiPanels();
+console.info('%c[Sound] Положите файлы в папку sounds/: ' + Object.values(SoundManager.FILES).join(', '), 'color:#eab308');
+requestAnimationFrame(gameLoop);
 </script>
 <script>
 // Регистрация Service Worker для PWA
