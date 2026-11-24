@@ -15,18 +15,16 @@ const globalAnimals = [];
 
 const globalSeed = Math.floor(Math.random() * 100000);
 
-// --- ЛОГИКА ШУМА И БИОМОВ ДЛЯ СЕРВЕРА ---
+// --- ГЕНЕРАТОР МИРА (общий движок с клиентом: worldgen.js) ---
+// Тот же сид = тот же мир в одиночке и мультиплеере. Биомы, реки, озёра,
+// пляжи и геология руд считаются одинаково на сервере и на клиенте.
+const WorldGen = require('./worldgen.js');
+WorldGen.init(globalSeed);
+// Детерминированный пер-тайловый рандом предметов (должен совпадать с клиентом)
 function MathNoise2D(x, y) { let n = Math.sin(x * 12.9898 + y * 78.233 + globalSeed) * 43758.5453123; return n - Math.floor(n); }
-function smoothNoise2D(x, y) { let cx = Math.floor(x), cy = Math.floor(y), fx = x - cx, fy = y - cy; let ux = fx * fx * (3.0 - 2.0 * fx), uy = fy * fy * (3.0 - 2.0 * fy); let v00 = MathNoise2D(cx, cy), v10 = MathNoise2D(cx + 1, cy), v01 = MathNoise2D(cx, cy + 1), v11 = MathNoise2D(cx + 1, cy + 1); return v00 * (1 - ux) * (1 - uy) + v10 * ux * (1 - uy) + v01 * (1 - ux) * uy + v11 * ux * uy; }
-function fbm2D(x, y, octaves = 3) { let value = 0, amplitude = 1.0, frequency = 1.0, maxVal = 0; for(let i=0; i<octaves; i++) { value += amplitude * smoothNoise2D(x * frequency, y * frequency); maxVal += amplitude; amplitude *= 0.5; frequency *= 2.0; } return value / maxVal; }
-const BIOMES = { SEA: 'SEA', RIVER: 'RIVER', BEACH_SAND: 'BEACH_SAND', BEACH_CLAY: 'BEACH_CLAY', DESERT: 'DESERT', STEPPE: 'STEPPE', PLAIN: 'PLAIN', FOREST: 'FOREST', TAIGA: 'TAIGA', TUNDRA: 'TUNDRA' };
+const WATER_BIOMES = ['SEA', 'RIVER', 'LAKE', 'SHALLOW_SEA'];
 function getBiomeAt(tileX, tileY) {
-    let elevation = fbm2D(tileX * 0.02, tileY * 0.02, 4); let temperature = fbm2D(tileX * 0.015 + 200, tileY * 0.015 + 200, 3); let moisture = fbm2D(tileX * 0.02 + 400, tileY * 0.02 + 400, 3);
-    if (elevation < 0.38) return BIOMES.SEA; let riverPattern = Math.abs(Math.sin(fbm2D(tileX * 0.05 + 600, tileY * 0.05 + 600, 2) * Math.PI)); if (riverPattern < 0.12) return BIOMES.RIVER;
-    if (elevation < 0.42) { let beachNoise = fbm2D(tileX * 0.1 + 1000, tileY * 0.1 + 1000, 2); return beachNoise > 0.5 ? BIOMES.BEACH_SAND : BIOMES.BEACH_CLAY; }
-    if (temperature < 0.35) return (moisture < 0.45) ? BIOMES.TUNDRA : BIOMES.TAIGA; 
-    else if (temperature < 0.65) { if (moisture < 0.35) return BIOMES.STEPPE; return (moisture < 0.65) ? BIOMES.PLAIN : BIOMES.FOREST; } 
-    else { if (moisture < 0.35) return BIOMES.DESERT; return (moisture < 0.60) ? BIOMES.STEPPE : BIOMES.PLAIN; }
+    return WorldGen.getBiomeNameAt(tileX, tileY);
 }
 
 function getDropsForFeature(feature, tx, ty) {
@@ -69,13 +67,21 @@ function generateServerFloorItems(tx, ty, biome, dim) {
     let rand = MathNoise2D(tx, ty);
     const cx = tx * 64 + 32, cy = ty * 64 + 32;
     
-    if (biome === 'FOREST' || biome === 'TAIGA') {
-        if (rand >= 0.08 && rand < 0.095) spawnServerItem(cx, cy, 'stick', 1, dim);
-        else if (rand >= 0.095 && rand < 0.105) spawnServerItem(cx, cy, 'apple', 1, dim);
-        if (biome === 'TAIGA' && rand > 0.85 && rand < 0.88) spawnServerItem(cx + 8, cy + 8, 'wildberries', 1, dim);
-        if (biome === 'FOREST' && rand > 0.90 && rand < 0.92) spawnServerItem(cx + 8, cy + 8, 'carrot', 1, dim);
-    } 
-    else if (biome === 'PLAIN' || biome === 'STEPPE' || biome === 'DESERT') {
+    if (biome === 'FOREST' || biome === 'TAIGA' || biome === 'JUNGLE') {
+        if (biome === 'JUNGLE') {
+            if (rand >= 0.16 && rand < 0.175) spawnServerItem(cx, cy, 'stick', 1, dim);
+            if (rand > 0.80 && rand < 0.84) spawnServerItem(cx + 8, cy + 8, 'wildberries', 1, dim);
+        } else {
+            if (rand >= 0.08 && rand < 0.095) spawnServerItem(cx, cy, 'stick', 1, dim);
+            else if (rand >= 0.095 && rand < 0.105) spawnServerItem(cx, cy, 'apple', 1, dim);
+            if (biome === 'TAIGA' && rand > 0.85 && rand < 0.88) spawnServerItem(cx + 8, cy + 8, 'wildberries', 1, dim);
+            if (biome === 'FOREST' && rand > 0.90 && rand < 0.92) spawnServerItem(cx + 8, cy + 8, 'carrot', 1, dim);
+        }
+    }
+    else if (biome === 'SWAMP') {
+        if (rand > 0.55 && rand < 0.59) spawnServerItem(cx + 8, cy + 8, 'wildberries', 1, dim);
+    }
+    else if (biome === 'PLAIN' || biome === 'STEPPE' || biome === 'SAVANNA' || biome === 'DESERT') {
         if (rand >= 0.04 && rand < 0.055 && biome !== 'DESERT') spawnServerItem(cx, cy, 'rock', 1, dim);
         if (rand > 0.93 && rand < 0.95) spawnServerItem(cx + 8, cy + 8, 'carrot', 1, dim);
     } 
@@ -188,11 +194,11 @@ setInterval(() => {
             let sx = p.x + Math.cos(spawnAngle) * spawnDist; let sy = p.y + Math.sin(spawnAngle) * spawnDist;
             let stx = Math.floor(sx / 64); let sty = Math.floor(sy / 64);
             let bio = getBiomeAt(stx, sty);
-            if (bio !== BIOMES.SEA && bio !== BIOMES.RIVER) {
+            if (!WATER_BIOMES.includes(bio)) {
                 let rand = Math.random(); let groupSize = Math.floor(Math.random() * 5) + 1;
-                if (bio === BIOMES.FOREST || bio === BIOMES.TAIGA) { if (rand < 0.3) spawnServerAnimal(stx, sty, 'wolf', Math.random() > 0.5 ? groupSize : 1); else if (rand < 0.6) spawnServerAnimal(stx, sty, 'deer', groupSize); else spawnServerAnimal(stx, sty, 'pig', groupSize); }
-                else if (bio === BIOMES.PLAIN) { if (rand < 0.2) spawnServerAnimal(stx, sty, 'wolf', groupSize); else if (rand < 0.5) spawnServerAnimal(stx, sty, 'sheep', groupSize); else spawnServerAnimal(stx, sty, 'pig', groupSize); }
-                else if (bio === BIOMES.STEPPE) { if (rand < 0.2) spawnServerAnimal(stx, sty, 'wolf', groupSize); else if (rand < 0.6) spawnServerAnimal(stx, sty, 'sheep', groupSize); else spawnServerAnimal(stx, sty, 'deer', groupSize); }
+                if (bio === 'FOREST' || bio === 'TAIGA' || bio === 'JUNGLE') { if (rand < 0.3) spawnServerAnimal(stx, sty, 'wolf', Math.random() > 0.5 ? groupSize : 1); else if (rand < 0.6) spawnServerAnimal(stx, sty, 'deer', groupSize); else spawnServerAnimal(stx, sty, 'pig', groupSize); }
+                else if (bio === 'PLAIN' || bio === 'SAVANNA') { if (rand < 0.2) spawnServerAnimal(stx, sty, 'wolf', groupSize); else if (rand < 0.5) spawnServerAnimal(stx, sty, 'sheep', groupSize); else spawnServerAnimal(stx, sty, 'pig', groupSize); }
+                else if (bio === 'STEPPE' || bio === 'SWAMP') { if (rand < 0.2) spawnServerAnimal(stx, sty, 'wolf', groupSize); else if (rand < 0.6) spawnServerAnimal(stx, sty, 'sheep', groupSize); else spawnServerAnimal(stx, sty, 'deer', groupSize); }
             }
         }
     }
