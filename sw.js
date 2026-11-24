@@ -1,7 +1,8 @@
-const CACHE_NAME = 'survival-sandbox-v1';
+const CACHE_NAME = 'survival-sandbox-v2';
 const urlsToCache = [
     './',
     './index.html',
+    './worldgen.js',
     './player.png'
     // Остальные текстуры и скрипты кэшируются автоматически при первом заходе
 ];
