@@ -1,4 +1,4 @@
-const CACHE_NAME = 'survival-sandbox-v2';
+const CACHE_NAME = 'survival-sandbox-v5';
 const urlsToCache = [
     './',
     './index.html',
