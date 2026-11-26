@@ -25,7 +25,11 @@
      rivers (priority flood + discharge)    -> PORTED as ridged-noise rivers
                                                 on a warped domain, with
                                                 width that grows downstream
-                                                and in humid climates
+                                                and in humid climates, plus a
+                                                region-scale "drainage power"
+                                                field that mixes long, wide,
+                                                meandering trunk rivers with
+                                                short, narrow brooks
      lakes (depression filling)             -> PORTED as noise-band lakes
      beaches from distance-to-water         -> kept (computed per chunk with
                                                 a margin ring)
@@ -162,7 +166,7 @@
   var SHALLOW_BAND = 0.028;
 
   var nCont = null, nWarp = null, nTemp = null, nHum = null,
-      nRiv = null, nRivWarp = null, nLake = null,
+      nRiv = null, nRivWarp = null, nRivPwr = null, nLake = null,
       nGeoA = null, nGeoB = null, nGeoC = null, nMisc = null;
 
   var chunks = new Map();      /* "cx,cy" -> chunk object (insertion-ordered LRU) */
@@ -175,6 +179,7 @@
     nHum      = new Simplex(mulberry32((seedHash + 303) >>> 0));
     nRiv      = new Simplex(mulberry32((seedHash + 404) >>> 0));
     nRivWarp  = new Simplex(mulberry32((seedHash + 505) >>> 0));
+    nRivPwr   = new Simplex(mulberry32((seedHash + 1313) >>> 0));
     nLake     = new Simplex(mulberry32((seedHash + 606) >>> 0));
     nGeoA     = new Simplex(mulberry32((seedHash + 707) >>> 0));
     nGeoB     = new Simplex(mulberry32((seedHash + 808) >>> 0));
@@ -225,17 +230,42 @@
   }
 
   /* River test — ridged noise on its own warped domain: the zero contours
-     of a 2D noise field form connected, river-like curves. The channel is
-     wider in humid climates and wider near the sea (downstream discharge),
-     and rivers only exist on land, never inside the ocean. */
+     of a 2D noise field form connected, river-like curves.
+
+     VARIETY comes from three independent axes:
+       1. drainage power (very low frequency) — high-power regions host
+          trunk rivers (wide, strongly meandering, long), low-power
+          regions only get short narrow brooks that fade out;
+       2. discharge — wider in humid climates and near the sea
+          (downstream), thinner in arid, inland headwaters;
+       3. pulse — a medium-frequency swell so a single river widens into
+          pools and narrows into riffles along its course.
+     Rivers only exist on land, never inside the ocean. */
   function riverAt(tx, ty, cont, hum) {
-    if (cont < SEA_LEVEL + 0.012) return false;    /* not on open ocean floor */
-    var wx = tx + 40 * fbm(nRivWarp, tx * 0.006, ty * 0.006, 2);
-    var wy = ty + 40 * fbm(nRivWarp, tx * 0.006 + 55.5, ty * 0.006 + 77.7, 2);
-    var ridge = Math.abs(fbm(nRiv, wx * 0.013, wy * 0.013, 4));
+    if (cont < SEA_LEVEL + 0.030) return false;    /* off the shelf: no shoreline-hugging rivers */
+
+    var pwr = fbm(nRivPwr, tx * 0.0021, ty * 0.0021, 2);   /* region field */
+    var power = sstep(-0.12, 0.44, pwr);            /* 0 = brook country, 1 = trunk */
+
+    /* meander strength follows power: trunks wander widely (long courses),
+       brooks run straighter (short hops) */
+    var meander = 12 + 46 * power;
+    var wx = tx + meander * fbm(nRivWarp, tx * 0.006, ty * 0.006, 2);
+    var wy = ty + meander * fbm(nRivWarp, tx * 0.006 + 55.5, ty * 0.006 + 77.7, 2);
+
+    /* ridge detail follows power: 2-octave contours are smooth and run
+       for hundreds of tiles (long trunks); 4-octave contours are choppy
+       and short (brooks). Blending by power gives both, without seams. */
+    var ridge2 = Math.abs(fbm(nRiv, wx * 0.013, wy * 0.013, 2));
+    var ridge4 = Math.abs(fbm(nRiv, wx * 0.013, wy * 0.013, 4));
+    var ridge = ridge2 * power + ridge4 * (1 - power);
     var wet = sstep(0.18, 0.75, hum);              /* arid -> thin rivers  */
+    wet = Math.max(wet, 0.55 * power);             /* trunks survive dry belts */
     var inland = sstep(SEA_LEVEL + 0.05, SEA_LEVEL + 0.40, cont);
-    var width = (0.012 + 0.026 * wet) * (1.22 - 0.55 * inland);
+
+    var trunk = 0.75 + 1.55 * power * power;       /* streams .. big trunks */
+    var pulse = 1.00 + 0.22 * fbm(nMisc, tx * 0.021 + 909, ty * 0.021 + 909, 2);
+    var width = (0.012 + 0.026 * wet) * (1.22 - 0.55 * inland) * trunk * pulse;
     return ridge < width;
   }
 
