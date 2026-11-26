@@ -42,6 +42,11 @@ function getDropsForFeature(feature, tx, ty) {
     else if (feature.type === 'brick_wall') { drops.push({ name: 'brick wall', count: 1 }); }
     else if (feature.type === 'loom') { drops.push({ name: 'loom', count: 1 }); }
     else if (feature.type === 'bed') { drops.push({ name: 'bed', count: 1 }); }
+    else if (feature.type === 'chest') {
+        // Сундук: выпадает сам + всё содержимое (9 ячеек с неограниченным количеством)
+        drops.push({ name: 'chest', count: 1 });
+        if (feature.slots) feature.slots.forEach(s => { if (s) drops.push({ name: s.name, count: s.count }); });
+    }
     else if (feature.type === 'bush') { drops.push({ name: 'stick', count: Math.floor(Math.random() * 3) + 1 }); if (Math.random() < 0.20) drops.push({ name: 'wildberries', count: 1 }); }
     else if (feature.type === 'seaweed_plant') { drops.push({ name: 'seaweed', count: 1 }); }
     return drops.map(d => ({ ...d, x: cx + (Math.random() - 0.5) * 20, y: cy + (Math.random() - 0.5) * 20 }));
@@ -130,7 +135,17 @@ io.on('connection', (socket) => {
                 const dim = parts[0];
                 const [tx, ty] = parts[1].split(',').map(Number);
                 const biome = getBiomeAt(tx, ty);
-                generateServerFloorItems(tx, ty, biome, dim);
+                if (value && value.type === 'dug') {
+                    // Digging with a shovel: the server hands out the resource (1 unit) and remembers
+                    // that the tile is already dug out — you can't dig it a second time
+                    let drop = null;
+                    if (biome === 'BEACH_SAND') drop = 'sand';
+                    else if (biome === 'BEACH_CLAY') drop = 'clay';
+                    else if (!WATER_BIOMES.includes(biome) && biome !== 'DESERT') drop = 'mud';
+                    if (drop) spawnServerItem(tx * 64 + 32, ty * 64 + 32, drop, 1, dim);
+                } else {
+                    generateServerFloorItems(tx, ty, biome, dim);
+                }
             }
             globalWorldModifications[key] = value;
         }
